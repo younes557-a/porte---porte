@@ -25,16 +25,14 @@
     .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
+    .ok{color:#15803d}.warn{color:#b45309}.err{color:#b91c1c}
   </style>
 
   <!-- SDK Supabase (UMD global) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
-    // ⚙️ Ton projet
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-
-    // ✅ Client Supabase (ne pas écraser le namespace global)
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
   </script>
@@ -132,23 +130,29 @@
         <td>${EH(r.nom)}</td>
         <td>${EH(r.adresse)}</td>
         <td>${EH(r.secteur||'')}</td>
-        <td><input class="input" data-id="${r.id}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
-        <td><input class="input" data-id="${r.id}" data-field="email" value="${EH(r.email||'')}" /></td>
+        <td><input class="input" data-id="${r.keyVal}" data-key="${r.keyCol}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
+        <td><input class="input" data-id="${r.keyVal}" data-key="${r.keyCol}" data-field="email" value="${EH(r.email||'')}" /></td>
         <td>${pill(r.statut)}</td>
-        <td><textarea class="input" data-id="${r.id}" data-field="remarque">${EH(r.remarque||'')}</textarea></td>
+        <td><textarea class="input" data-id="${r.keyVal}" data-key="${r.keyCol}" data-field="remarque">${EH(r.remarque||'')}</textarea></td>
         <td>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Favorable">Favorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Défavorable">Défavorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Neutre">Neutre</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Absent">Absent</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Non contacté">Non contacté</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Favorable">Favorable</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Défavorable">Défavorable</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Neutre">Neutre</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Absent">Absent</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Non contacté">Non contacté</button>
         </td>
       </tr>`).join('');
     updateStats();
   }
 
-  // ---- mapping FR/EN robuste ----
+  // ---- mapping FR/EN + DÉTECTION DE CLÉ ----
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
+  function pickKeyCol(obj){
+    const candidates = ['id','uuid','contact_id','id_contact','identifiant','Identifiant','pk','rowid'];
+    for (const k of candidates){ if (k in obj) return k; }
+    // fallback : première clé de l'objet (peu recommandé, mais mieux que rien)
+    return Object.keys(obj)[0];
+  }
   function buildAdresse(obj){
     const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
     const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
@@ -164,21 +168,26 @@
     return [first,last].filter(Boolean).join(' ') || pick(obj,['name']);
   }
 
-  // ====== CHANGEMENT #1 : lire status/remark depuis la base ======
+  // ====== CHARGEMENT : lit status/remark et détecte la clé ======
   async function loadContacts(){
     const { data, error } = await sb.from('contacts').select('*').limit(20000);
     if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
-    state.rows = (data||[]).map(c=>({
-      id: c.id,
-      nom: buildNom(c),
-      adresse: buildAdresse(c),
-      secteur: pick(c, ['sector','secteur']),
-      telephone: pick(c, ['phone','téléphone','telephone']),
-      email: pick(c, ['email','courriel']),
-      statut: c.status || 'Non contacté',   // ⬅️ prend la valeur en base
-      remarque: c.remark || ''              // ⬅️ idem
-    }));
-    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+    state.rows = (data||[]).map((c, idx)=>{
+      const keyCol = pickKeyCol(c);
+      const keyVal = c[keyCol];
+      return {
+        keyCol, keyVal,            // ⬅️ stocke la vraie clé pour UPDATE
+        id: c.id ?? keyVal,        // pour compat UI
+        nom: buildNom(c),
+        adresse: buildAdresse(c),
+        secteur: pick(c, ['sector','secteur']),
+        telephone: pick(c, ['phone','téléphone','telephone']),
+        email: pick(c, ['email','courriel']),
+        statut: c.status || 'Non contacté',
+        remarque: c.remark || ''
+      };
+    });
+    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[`${r.keyCol}:${r.keyVal}`]=i);
     log('[contacts]', state.rows.length);
     render();
   }
@@ -197,63 +206,65 @@
     }
   }
 
-  // --- events ---
+  // --- Auth events ---
   $('btnSignIn').onclick = async ()=>{
     $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
-    log('[login click]', {email, passwordLen: password.length});
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
-    log('[login OK]');
     await boot();
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
-  sb.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt, 'true'); boot(); });
+  sb.auth.onAuthStateChange(()=> boot());
 
-  // ====== CHANGEMENT #2 : clic sur statut => UPDATE contacts.status ======
+  // ====== Clic statut => UPDATE contacts.status en utilisant la bonne clé ======
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]');
     if(!b) return;
-    const id=b.dataset.id, val=b.dataset.val;
+    const keyVal = b.dataset.id;
+    const keyCol = b.dataset.key;
+    const val    = b.dataset.val;
 
-    // 1) sauvegarde du statut courant dans contacts
-    const { error: upErr } = await sb
-      .from('contacts')
-      .update({ status: val })
-      .eq('id', id);
-
-    if (upErr){ alert(upErr.message); log('[update status ERROR]', upErr); return; }
-
-    // 2) (optionnel) garder l’historique
-    // await sb.from('visits').insert([{ contact_id:id, status:val }]);
-
-    // 3) mise à jour immédiate de l’UI
-    const i=state.indexById[id];
-    if(i!=null){ state.rows[i].statut = val; render(); }
+    const q = sb.from('contacts').update({ status: val }).eq(keyCol, keyVal).select();
+    const { data, error } = await q;
+    if (error){ alert(error.message); log('[update status ERROR]', error); return; }
+    if (!data || data.length === 0){
+      alert('⚠️ Statut non enregistré (0 ligne mise à jour). Clé utilisée: ' + keyCol + ' = ' + keyVal);
+      log('[update status WARN]', {keyCol, keyVal, val});
+      return;
+    }
+    const i = state.indexById[`${keyCol}:${keyVal}`];
+    if (i!=null){ state.rows[i].statut = val; render(); }
   });
 
-  // ====== CHANGEMENT #3 : envoyer remark (et phone/email) dans contacts ======
+  // ====== Édition tel/email/remark => UPDATE avec la bonne clé ======
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]');
     if(!el) return;
-    const id=el.dataset.id, field=el.dataset.field, val=el.value;
+    const keyVal = el.dataset.id;
+    const keyCol = el.dataset.key;
+    const field  = el.dataset.field;
+    const val    = el.value;
     const patch={};
     if(field==='telephone') patch.phone  = val;
     else if(field==='email') patch.email = val;
-    else if(field==='remarque') patch.remark = val;   // ⬅️ nouveau
+    else if(field==='remarque') patch.remark = val;
 
     if (Object.keys(patch).length){
-      const { error } = await sb.from('contacts').update(patch).eq('id', id);
+      const { data, error } = await sb.from('contacts').update(patch).eq(keyCol, keyVal).select();
       if (error){ alert(error.message); log('[update contact ERROR]', error); }
+      else if (!data || data.length===0){ log('[update contact WARN 0-row]', {keyCol,keyVal,patch}); }
     }
   });
 
+  // Filtres + rechargement
   $('q').oninput   = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
+  // Exports
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Secteur','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
