@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Porte-à-porte — Supabase</title>
+
+  <!-- Favicon inline -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%232563eb'/%3E%3Ctext x='32' y='39' font-size='28' text-anchor='middle' fill='white' font-family='Arial'%3EP%3C/text%3E%3C/svg%3E">
+
   <style>
     :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
     *{box-sizing:border-box}
@@ -17,7 +21,7 @@
     .btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}
     .input, select, textarea{border:1.5px solid #111;border-radius:10px;padding:8px 10px;background:#fff;color:#111}
     table{border-collapse:collapse;width:100%;font-size:14px}
-    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px}
+    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;z-index:1}
     tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
     .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
     .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
@@ -32,6 +36,7 @@
     (function () {
       const h = location.hash || "";
       if (h.includes("type=recovery") && h.includes("access_token")) {
+        console.log('[redirect] recovery hash détecté → reset_password.html');
         location.replace("./reset_password.html" + h);
       }
     })();
@@ -40,10 +45,9 @@
   <!-- SDK Supabase (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
-    // ⚙️ Ton projet
+    // ⚙️ Projet Supabase
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
   </script>
@@ -107,16 +111,14 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
+  const logUI = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); const el=$('log'); if(el) el.textContent += s+'\n'; };
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
   const state = { rows:[], indexById:{}, filters:{q:'',bureau:'',status:''} };
 
-  /* ====== Helpers colonnes FR/EN robustes ====== */
+  /* ===== Helpers colonnes robustes ===== */
   const norm = s => String(s||'')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // accents
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g,'_')
-    .replace(/^_|_$/g,'');
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
 
   function pick(obj, variants){
     if (!obj.__norm__) {
@@ -153,7 +155,7 @@
     return lib || code || '';
   }
 
-  /* ====== UI helpers ====== */
+  /* ===== UI helpers ===== */
   function pill(st){
     if(st==='Favorable')  return '<span class="pill fav">Favorable</span>';
     if(st==='Défavorable')return '<span class="pill def">Défavorable</span>';
@@ -211,72 +213,90 @@
     updateStats();
   }
 
-  /* ====== Chargement paginé ====== */
+  /* ===== Chargement paginé ===== */
   async function loadContacts(){
-    const pageSize = 1000;
-    let from = 0, all = [];
-    while (true){
-      const to = from + pageSize - 1;
-      const { data, error } = await sb
-        .from('contacts')
-        .select('*')
-        .range(from, to);
-      if (error){ log('[loadContacts ERROR]', error); alert(error.message); break; }
-      all = all.concat(data || []);
-      if (!data || data.length < pageSize) break;
-      from += pageSize;
+    try{
+      const pageSize = 1000;
+      let from = 0, all = [];
+      while (true){
+        const to = from + pageSize - 1;
+        const { data, error } = await sb.from('contacts').select('*').range(from, to);
+        if (error){ console.error('[loadContacts error]', error); logUI('[loadContacts error]', error.message||error); break; }
+        if (!data || data.length === 0) break;
+        all = all.concat(data);
+        if (data.length < pageSize) break;
+        from += pageSize;
+      }
+      console.log('[contacts loaded]', all.length);
+      logUI('[contacts loaded]', String(all.length));
+      state.rows = all.map(c=>({
+        id: c.id,
+        nom: buildNom(c),
+        adresse: buildAdresse(c),
+        bureau_vote: buildBureau(c),
+        telephone: pick(c, ['téléphone','telephone','phone']),
+        email: pick(c, ['email','courriel']),
+        statut: 'Non contacté',
+        remarque: ''
+      }));
+      state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+      render();
+    }catch(err){
+      console.error('[loadContacts exception]', err);
+      logUI('[loadContacts exception]', err.message||String(err));
     }
-    state.rows = all.map(c=>({
-      id: c.id,
-      nom: buildNom(c),
-      adresse: buildAdresse(c),
-      bureau_vote: buildBureau(c),
-      telephone: pick(c, ['téléphone','telephone','phone']),
-      email: pick(c, ['email','courriel']),
-      statut: 'Non contacté',
-      remarque: ''
-    }));
-    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
-    log('[contacts]', state.rows.length);
-    render();
   }
 
-  /* ====== Boot / Auth ====== */
+  /* ===== Boot / Auth avec logs ===== */
   async function boot(){
-    const { data:{ session } } = await sb.auth.getSession();
-    if (session?.user){
-      $('who').textContent = session.user.email || session.user.id;
-      $('authCard').classList.add('hidden');
-      $('appCard').classList.remove('hidden');
-      await loadContacts();
-    } else {
-      $('appCard').classList.add('hidden');
-      $('authCard').classList.remove('hidden');
+    try{
+      const { data:{ session }, error } = await sb.auth.getSession();
+      console.log('[boot session]', session, error);
+      if (session?.user){
+        console.log('[boot] signed in as', session.user.email);
+        $('who').textContent = session.user.email || session.user.id;
+        $('authCard').classList.add('hidden');
+        $('appCard').classList.remove('hidden');
+        await loadContacts();
+      } else {
+        console.log('[boot] no session');
+        $('appCard').classList.add('hidden');
+        $('authCard').classList.remove('hidden');
+      }
+    }catch(err){
+      console.error('[boot ERROR]', err);
+      alert('Erreur boot : ' + (err.message||String(err)));
     }
   }
 
-  /* ====== Events ====== */
+  /* ===== Events ===== */
   $('btnSignIn').onclick = async ()=>{
     $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; return; }
+    if (error){ $('authError').textContent=error.message; console.error('[login error]', error); return; }
     await boot();
   };
+
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
-  sb.auth.onAuthStateChange(()=> boot());
+
+  sb.auth.onAuthStateChange((evt)=>{ console.log('[auth change]', evt); boot(); });
 
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
     const id=b.dataset.id, val=b.dataset.val;
-    const { data: u } = await sb.auth.getUser();
-    const updated_by = u?.user?.id;
-    const { error } = await sb.from('visits')
-      .insert([{ contact_id:id, status:val, remark:'', updated_by }]);
-    if (error){ alert(error.message); return; }
-    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
+    try{
+      const { data: u } = await sb.auth.getUser();
+      const updated_by = u?.user?.id;
+      const { error } = await sb.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
+      if (error){ alert(error.message); console.error('[status insert error]', error); return; }
+      const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
+    }catch(err){
+      console.error('[status insert exception]', err);
+      alert('Erreur enregistrement statut : ' + (err.message||String(err)));
+    }
   });
 
   document.addEventListener('input', async (e)=>{
@@ -284,8 +304,12 @@
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
     const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val;
     if (Object.keys(patch).length){
-      const { error } = await sb.from('contacts').update(patch).eq('id', id);
-      if (error){ alert(error.message); }
+      try{
+        const { error } = await sb.from('contacts').update(patch).eq('id', id);
+        if (error){ console.error('[contact update error]', error); }
+      }catch(err){
+        console.error('[contact update exception]', err);
+      }
     }
   });
 
@@ -294,7 +318,7 @@
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
-  /* ====== Exports ====== */
+  /* Exports */
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
