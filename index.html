@@ -26,19 +26,19 @@
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
-  <!-- SDK Supabase global (non-module). Crée l’objet global window.supabaseLib -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script>
-    // ⚙️ CONFIG PROJET (à toi)
-    const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
-    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
+  <!-- SDK Supabase global UMD -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  // ⚙️ Ton projet
+  const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
 
-    // ✅ On crée le client et on l’expose en global sous window.supabase
-    // (comme ça, tu peux tester dans la console: await supabase.from('contacts')...)
-    window.supabase = window.supabaseLib.createClient(SUPABASE_URL, SUPABASE_ANON, {
-      auth: { persistSession: true }
-    });
-  </script>
+  // ✅ Crée le client depuis l’objet global "supabase"
+  // (et expose-le aussi globalement pour les tests console)
+  window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
+    auth: { persistSession: true }
+  });
+</script>
 </head>
 <body>
 <div class="wrap">
