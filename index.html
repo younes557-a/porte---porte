@@ -4,10 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Porte-à-porte — Supabase</title>
-
-  <!-- ✅ Favicon inline -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%232563eb'/%3E%3Ctext x='32' y='39' font-size='28' text-anchor='middle' fill='white' font-family='Arial'%3EP%3C/text%3E%3C/svg%3E">
-
   <style>
     :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
     *{box-sizing:border-box}
@@ -25,20 +21,30 @@
     tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
     .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
     .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
-    .pill.ind{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+    .pill.neu{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
     .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
 
-  <!-- ⚠️ SDK Supabase UMD -->
+  <!-- ⚠️ Redirect automatique pour reset_password -->
+  <script>
+    (function () {
+      const h = location.hash || "";
+      if (h.includes("type=recovery") && h.includes("access_token")) {
+        location.replace("./reset_password.html" + h);
+      }
+    })();
+  </script>
+
+  <!-- ⚠️ Build UMD global du SDK -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
     // ⚙️ Ton projet
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
 
-    // ✅ Client global Supabase
+    // ✅ Crée un client
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
   </script>
@@ -63,7 +69,7 @@
     <div class="row" style="justify-content:space-between">
       <div class="muted">Connecté : <b id="who"></b></div>
       <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque, bureau de vote)..." style="flex:1;min-width:260px" />
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, bureau de vote...)" style="flex:1;min-width:260px" />
         <select id="fStatus" class="input">
           <option value="">Tous les statuts</option>
           <option>Favorable</option><option>Défavorable</option>
@@ -85,7 +91,7 @@
       <table>
         <thead>
           <tr>
-            <th>Nom complet</th><th>Adresse</th><th>Secteur</th><th>Bureau de vote</th>
+            <th>Nom</th><th>Adresse</th><th>Bureau de vote</th>
             <th>Téléphone</th><th>Email</th>
             <th>Statut</th><th>Remarque</th><th>Actions</th>
           </tr>
@@ -107,7 +113,7 @@
 
   function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
-    if(st==='Indécis')return'<span class="pill ind">Indécis</span>';
+    if(st==='Indécis')return'<span class="pill neu">Indécis</span>';
     if(st==='Absent')return'<span class="pill abs">Absent</span>';
     return'<span class="pill nc">Non contacté</span>'; }
   function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
@@ -116,7 +122,7 @@
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
-      const okQ=!q || [r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.remarque]
+      const okQ=!q || [r.nom,r.adresse,r.bureau_vote,r.telephone,r.email,r.remarque]
         .some(v=> String(v||'').toLowerCase().includes(q));
       return okS && okQ;
     });
@@ -135,8 +141,7 @@
       <tr class="${rowCls(r.statut)}">
         <td>${EH(r.nom)}</td>
         <td>${EH(r.adresse)}</td>
-        <td>${EH(r.secteur||'')}</td>
-        <td>${EH(r.bureau||'')}</td>
+        <td>${EH(r.bureau_vote||'')}</td>
         <td><input class="input" data-id="${r.id}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
         <td><input class="input" data-id="${r.id}" data-field="email" value="${EH(r.email||'')}" /></td>
         <td>${pill(r.statut)}</td>
@@ -152,19 +157,21 @@
     updateStats();
   }
 
-  // ---- mapping FR/EN robuste ----
+  // ---- mapping FR/EN ----
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
   function buildAdresse(obj){
     const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie']);
-    const lib = pick(obj, ['libellé de voie','libelle de voie','rue','voie']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie']);
     const cp  = pick(obj, ['code postal','code_postal']);
     const com = pick(obj, ['commune','ville']);
     return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
   }
   function buildNom(obj){
-    const first = pick(obj, ['first_name','prenom','prénom']);
-    const last  = pick(obj, ['last_name','nom de naissance','nom']);
-    return [first,last].filter(Boolean).join(' ');
+    const first = pick(obj, ['first_name','prenom','prénom','prénoms']);
+    const lastUsage = pick(obj, ['last_name','nom d’usage','nom_usage']);
+    const lastBirth = pick(obj, ['nom de naissance','nom_naissance']);
+    const last = lastUsage || lastBirth || pick(obj,['nom']);
+    return [first,last].filter(Boolean).join(' ') || pick(obj,['name']);
   }
 
   async function loadContacts(){
@@ -174,19 +181,19 @@
       id: c.id,
       nom: buildNom(c),
       adresse: buildAdresse(c),
-      secteur: pick(c, ['sector','secteur']),
-      bureau: pick(c, ['bureau','bureau_de_vote','bv']),
+      bureau_vote: pick(c, ['code du bureau de vote','libellé du bureau de vote']),
       telephone: pick(c, ['phone','téléphone','telephone']),
       email: pick(c, ['email','courriel']),
       statut: 'Non contacté',
       remarque: ''
     }));
     state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+    log('[contacts]', state.rows.length);
     render();
   }
 
   async function boot(){
-    const { data:{ session } } = await sb.auth.getSession();
+    const { data:{ session }, error } = await sb.auth.getSession();
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -217,22 +224,27 @@
     const { data: u } = await sb.auth.getUser();
     const updated_by = u?.user?.id;
     const { error } = await sb.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
-    if (!error){ const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); } }
+    if (error){ alert(error.message); return; }
+    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
   });
+
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
     const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val;
-    if (Object.keys(patch).length){ await sb.from('contacts').update(patch).eq('id', id); }
+    if (Object.keys(patch).length){
+      await sb.from('contacts').update(patch).eq('id', id);
+    }
   });
+
   $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
   const toCSV = rows=>{
-    const cols=['Nom','Adresse','Secteur','Bureau','Téléphone','Email','Statut','Remarque'];
+    const cols=['Nom','Adresse','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    return cols.join(';')+'\n'+rows.map(r=>[r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
+    return cols.join(';')+'\n'+rows.map(r=>[r.nom,r.adresse,r.bureau_vote,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
   };
   function downloadCSV(name, rows){
     const blob=new Blob([toCSV(rows)],{type:'text/csv;charset=utf-8;'});
@@ -242,10 +254,8 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
-  // Go
   boot();
 })();
 </script>
 </body>
 </html>
-
