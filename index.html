@@ -21,13 +21,13 @@
     tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
     .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
     .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
-    .pill.neu{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+    .pill.ind{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
     .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
 
-  <!-- ⚠️ Redirect automatique pour reset_password -->
+  <!-- Redirection auto vers reset_password.html si lien "recovery" -->
   <script>
     (function () {
       const h = location.hash || "";
@@ -37,14 +37,13 @@
     })();
   </script>
 
-  <!-- ⚠️ Build UMD global du SDK -->
+  <!-- SDK Supabase (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
     // ⚙️ Ton projet
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
 
-    // ✅ Crée un client
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
   </script>
@@ -69,7 +68,8 @@
     <div class="row" style="justify-content:space-between">
       <div class="muted">Connecté : <b id="who"></b></div>
       <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, bureau de vote...)" style="flex:1;min-width:260px" />
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:220px" />
+        <input id="fBureau" class="input" placeholder="Filtrer par bureau de vote…" style="min-width:220px" />
         <select id="fStatus" class="input">
           <option value="">Tous les statuts</option>
           <option>Favorable</option><option>Défavorable</option>
@@ -109,24 +109,77 @@
   const $ = id => document.getElementById(id);
   const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  const state = { rows:[], indexById:{}, filters:{q:'',status:''} };
+  const state = { rows:[], indexById:{}, filters:{q:'',bureau:'',status:''} };
 
-  function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
-    if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
-    if(st==='Indécis')return'<span class="pill neu">Indécis</span>';
-    if(st==='Absent')return'<span class="pill abs">Absent</span>';
-    return'<span class="pill nc">Non contacté</span>'; }
-  function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
+  /* ====== Helpers colonnes FR/EN robustes ====== */
+  const norm = s => String(s||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // accents
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g,'_')
+    .replace(/^_|_$/g,'');
+
+  function pick(obj, variants){
+    if (!obj.__norm__) {
+      obj.__norm__ = {};
+      for (const k of Object.keys(obj)) obj.__norm__[norm(k)] = k;
+    }
+    for (const v of variants){
+      const key = obj.__norm__[norm(v)];
+      if (key && obj[key] != null && obj[key] !== '') return obj[key];
+    }
+    return '';
+  }
+
+  function buildNom(obj){
+    const first = pick(obj, ['prénoms','prenoms','prénom','prenom','first_name']);
+    const lastUsage = pick(obj, ["nom d’usage","nom d'usage","nom_d_usage","last_name","nom_usage"]);
+    const lastBirth = pick(obj, ['nom de naissance','nom_de_naissance','nom_naissance']);
+    const last = lastUsage || lastBirth || pick(obj, ['nom','last_name']);
+    const nom = [first,last].filter(Boolean).join(' ').trim();
+    return nom || pick(obj, ['name']);
+  }
+
+  function buildAdresse(obj){
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
+    const lib = pick(obj, ['libellé de voie','libelle de voie','libelle_de_voie','rue','voie']);
+    const cp  = pick(obj, ['code postal','code_postal']);
+    const com = pick(obj, ['commune','ville']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj, ['adresse','address']);
+  }
+
+  function buildBureau(obj){
+    const lib = pick(obj, ['libellé du bureau de vote','libelle du bureau de vote','libelle_du_bureau_de_vote']);
+    const code = pick(obj, ['code du bureau de vote','code_du_bureau_de_vote']);
+    return lib || code || '';
+  }
+
+  /* ====== UI helpers ====== */
+  function pill(st){
+    if(st==='Favorable')  return '<span class="pill fav">Favorable</span>';
+    if(st==='Défavorable')return '<span class="pill def">Défavorable</span>';
+    if(st==='Indécis')    return '<span class="pill ind">Indécis</span>';
+    if(st==='Absent')     return '<span class="pill abs">Absent</span>';
+    return '<span class="pill nc">Non contacté</span>';
+  }
+  function rowCls(st){
+    return st==='Favorable'?'row-fav'
+         :st==='Défavorable'?'row-def'
+         :(st==='Indécis'||st==='Non contacté')?'row-ind'
+         :'';
+  }
 
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
+    const b=(state.filters.bureau||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
       const okQ=!q || [r.nom,r.adresse,r.bureau_vote,r.telephone,r.email,r.remarque]
         .some(v=> String(v||'').toLowerCase().includes(q));
-      return okS && okQ;
+      const okB=!b || String(r.bureau_vote||'').toLowerCase().includes(b);
+      return okS && okQ && okB;
     });
   }
+
   function updateStats(){
     const fav=state.rows.filter(r=>r.statut==='Favorable').length;
     const def=state.rows.filter(r=>r.statut==='Défavorable').length;
@@ -135,6 +188,7 @@
     const nc =state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
     $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Indécis: ${ind} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
   }
+
   function render(){
     const rows=filtered();
     $('tbody').innerHTML=rows.map(r=>`
@@ -157,32 +211,27 @@
     updateStats();
   }
 
-  // ---- mapping FR/EN ----
-  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
-  function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie']);
-    const cp  = pick(obj, ['code postal','code_postal']);
-    const com = pick(obj, ['commune','ville']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
-  }
-  function buildNom(obj){
-    const first = pick(obj, ['first_name','prenom','prénom','prénoms']);
-    const lastUsage = pick(obj, ['last_name','nom d’usage','nom_usage']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance']);
-    const last = lastUsage || lastBirth || pick(obj,['nom']);
-    return [first,last].filter(Boolean).join(' ') || pick(obj,['name']);
-  }
-
+  /* ====== Chargement paginé ====== */
   async function loadContacts(){
-    const { data, error } = await sb.from('contacts').select('*').limit(20000);
-    if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
-    state.rows = (data||[]).map(c=>({
+    const pageSize = 1000;
+    let from = 0, all = [];
+    while (true){
+      const to = from + pageSize - 1;
+      const { data, error } = await sb
+        .from('contacts')
+        .select('*')
+        .range(from, to);
+      if (error){ log('[loadContacts ERROR]', error); alert(error.message); break; }
+      all = all.concat(data || []);
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
+    state.rows = all.map(c=>({
       id: c.id,
       nom: buildNom(c),
       adresse: buildAdresse(c),
-      bureau_vote: pick(c, ['code du bureau de vote','libellé du bureau de vote']),
-      telephone: pick(c, ['phone','téléphone','telephone']),
+      bureau_vote: buildBureau(c),
+      telephone: pick(c, ['téléphone','telephone','phone']),
       email: pick(c, ['email','courriel']),
       statut: 'Non contacté',
       remarque: ''
@@ -192,8 +241,9 @@
     render();
   }
 
+  /* ====== Boot / Auth ====== */
   async function boot(){
-    const { data:{ session }, error } = await sb.auth.getSession();
+    const { data:{ session } } = await sb.auth.getSession();
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -205,7 +255,7 @@
     }
   }
 
-  // --- events ---
+  /* ====== Events ====== */
   $('btnSignIn').onclick = async ()=>{
     $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
@@ -223,7 +273,8 @@
     const id=b.dataset.id, val=b.dataset.val;
     const { data: u } = await sb.auth.getUser();
     const updated_by = u?.user?.id;
-    const { error } = await sb.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
+    const { error } = await sb.from('visits')
+      .insert([{ contact_id:id, status:val, remark:'', updated_by }]);
     if (error){ alert(error.message); return; }
     const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
   });
@@ -233,14 +284,17 @@
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
     const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val;
     if (Object.keys(patch).length){
-      await sb.from('contacts').update(patch).eq('id', id);
+      const { error } = await sb.from('contacts').update(patch).eq('id', id);
+      if (error){ alert(error.message); }
     }
   });
 
   $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
+  $('fBureau').oninput = e=>{ state.filters.bureau=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
+  /* ====== Exports ====== */
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
@@ -254,6 +308,7 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
+  /* Go */
   boot();
 })();
 </script>
