@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Porte-à-porte — Supabase (CDN)</title>
+  <title>Porte-à-porte — Supabase</title>
   <style>
     :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
     *{box-sizing:border-box}
@@ -26,19 +26,19 @@
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
-  <!-- SDK Supabase global UMD -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script>
-  // ⚙️ Ton projet
-  const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
-  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
 
-  // ✅ Crée le client depuis l’objet global "supabase"
-  // (et expose-le aussi globalement pour les tests console)
-  window.supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON, {
-    auth: { persistSession: true }
-  });
-</script>
+  <!-- ⚠️ Build UMD global du SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    // ⚙️ Ton projet
+    const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
+    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
+
+    // ✅ Crée un client SANS écraser le namespace global supabase
+    const { createClient } = window.supabase;   // <- pris depuis le namespace UMD
+    window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
+    // Désormais, UTILISE "sb" PARTOUT (et dans la console : await sb.from('contacts')...)
+  </script>
 </head>
 <body>
 <div class="wrap">
@@ -166,7 +166,7 @@
   }
 
   async function loadContacts(){
-    const { data, error } = await supabase.from('contacts').select('*').limit(20000);
+    const { data, error } = await sb.from('contacts').select('*').limit(20000);
     if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
     state.rows = (data||[]).map(c=>({
       id: c.id,
@@ -184,7 +184,7 @@
   }
 
   async function boot(){
-    const { data:{ session }, error } = await supabase.auth.getSession();
+    const { data:{ session }, error } = await sb.auth.getSession();
     log('[boot]', session ? 'SIGNED_IN' : 'NONE', error||'');
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
@@ -204,20 +204,20 @@
     const password=$('password').value.trim();
     log('[login click]', {email, passwordLen: password.length});
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
     log('[login OK]');
     await boot();
   };
-  $('btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); await boot(); };
-  supabase.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt, 'true'); boot(); });
+  $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
+  sb.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt, 'true'); boot(); });
 
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
     const id=b.dataset.id, val=b.dataset.val;
-    const { data: u } = await supabase.auth.getUser();
+    const { data: u } = await sb.auth.getUser();
     const updated_by = u?.user?.id;
-    const { error } = await supabase.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
+    const { error } = await sb.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
     if (error){ alert(error.message); log('[set status ERROR]', error); return; }
     const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
   });
@@ -226,7 +226,7 @@
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
     const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val;
     if (Object.keys(patch).length){
-      const { error } = await supabase.from('contacts').update(patch).eq('id', id);
+      const { error } = await sb.from('contacts').update(patch).eq('id', id);
       if (error){ alert(error.message); log('[update contact ERROR]', error); }
     }
   });
