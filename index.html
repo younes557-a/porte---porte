@@ -9,7 +9,7 @@
   *{box-sizing:border-box}
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:var(--bg);color:var(--fg);margin:0}
   .wrap{max-width:1200px;margin:0 auto;padding:16px}
-  h1{margin:0 0 6px 0;font-size:clamp(20px,2.6vw,28px)}
+  h1{margin:0 0 4px 0;font-size:clamp(20px,2.6vw,28px)}
   .muted{color:var(--muted);font-size:13px}
   .card{background:#fff;border-radius:14px;box-shadow:0 10px 24px -12px rgba(0,0,0,.18);padding:14px;margin-top:10px}
   .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -29,7 +29,7 @@
 <body>
 <div class="wrap">
   <h1>Porte-à-porte — Supabase</h1>
-  <div class="muted">Connexion requise. Accès limité par secteurs (RLS).</div>
+  <div class="muted">Connexion requise. Accès pour tous les secteurs.</div>
 
   <!-- Auth -->
   <div id="authCard" class="card">
@@ -37,9 +37,8 @@
       <div><div class="muted">Email</div><input id="email" class="input" placeholder="benevole@asso.fr" /></div>
       <div><div class="muted">Mot de passe</div><input id="password" type="password" class="input" placeholder="••••••••" /></div>
       <button id="btnSignIn" class="btn primary">Se connecter</button>
-      <button id="btnSignUp" class="btn">Créer un compte</button>
     </div>
-    <div class="muted" style="margin-top:6px">Astuce : désactive la création libre dans Supabase (Invite user seulement).</div>
+    <div id="authError" class="muted" style="color:#b91c1c;margin-top:6px"></div>
   </div>
 
   <!-- App -->
@@ -47,16 +46,22 @@
     <div class="row" style="justify-content:space-between">
       <div class="muted">Connecté : <b id="who"></b></div>
       <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1" />
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:260px" />
         <select id="fStatus" class="input">
           <option value="">Tous les statuts</option>
           <option>Favorable</option><option>Défavorable</option>
           <option>Neutre</option><option>Absent</option><option>Non contacté</option>
         </select>
-        <select id="fSect" class="input"><option value="">Tous secteurs</option></select>
         <button id="btnReload" class="btn">Recharger</button>
         <button id="btnSignOut" class="btn">Se déconnecter</button>
       </div>
+    </div>
+
+    <div class="row" style="gap:8px;margin-top:8px">
+      <button id="btnCSVAll" class="btn">Exporter CSV (tout)</button>
+      <button id="btnCSVFav" class="btn">CSV Favorables</button>
+      <button id="btnCSVIndecis" class="btn">CSV Indécis</button>
+      <span class="muted" id="stats"></span>
     </div>
 
     <div style="max-height:65vh;overflow:auto;margin-top:10px">
@@ -77,77 +82,16 @@
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-/* >>>>>>>>> CONFIG SUPABASE (TES VALEURS) <<<<<<<<< */
+/*** CONFIG SUPABASE ***/
 const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/* UI helpers */
-const $ = (id)=> document.getElementById(id);
-const escapeHtml = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;","&gt;":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-const state = { rows: [], indexById: {}, filters:{q:'',status:'',sect:''} };
+/*** HELPERS ***/
+const $ = id => document.getElementById(id);
+const escapeHtml = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+const state = { rows: [], indexById: {}, filters:{q:'',status:''} };
 
-/* AUTH */
-$('btnSignIn').onclick = async ()=>{
-  const email = $('email').value.trim(), password = $('password').value;
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return alert(error.message);
-  await boot();
-};
-$('btnSignUp').onclick = async ()=>{
-  const email = $('email').value.trim(), password = $('password').value;
-  const { error } = await supabase.auth.signUp({ email, password });
-  if (error) return alert(error.message);
-  alert('Compte créé. Connecte-toi.');
-};
-$('btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); $('appCard').classList.add('hidden'); $('authCard').classList.remove('hidden'); };
-
-async function boot(){
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user){ $('authCard').classList.remove('hidden'); $('appCard').classList.add('hidden'); return; }
-  $('who').textContent = user.email || user.id;
-  $('authCard').classList.add('hidden'); $('appCard').classList.remove('hidden');
-  await loadContacts();
-}
-
-/* DATA */
-async function loadContacts(){
-  const { data, error } = await supabase
-    .from('contacts')
-    .select('id, first_name, last_name, address, sector, phone, email')
-    .order('last_name', { ascending: true })
-    .limit(5000);
-  if (error) { alert(error.message); return; }
-
-  state.rows = (data||[]).map(c => ({
-    id: c.id,
-    nom: [c.first_name, c.last_name].filter(Boolean).join(' '),
-    adresse: c.address,
-    secteur: c.sector,
-    telephone: c.phone || '',
-    email: c.email || '',
-    statut: 'Non contacté',
-    remarque: ''
-  }));
-  rebuild(); render();
-}
-
-function rebuild(){
-  state.indexById = {};
-  state.rows.forEach((r,i)=> state.indexById[r.id]=i);
-  const sects = [...new Set(state.rows.map(r=>r.secteur||'').filter(Boolean))].sort();
-  $('fSect').innerHTML = ['<option value="">Tous secteurs</option>'].concat(sects.map(s=>`<option>${escapeHtml(s)}</option>`)).join('');
-}
-
-function filtered(){
-  const q = (state.filters.q||'').toLowerCase();
-  return state.rows.filter(r=>{
-    const okS = !state.filters.status || r.statut===state.filters.status;
-    const okC = !state.filters.sect   || r.secteur===state.filters.sect;
-    const okQ = !q || [r.nom,r.adresse,r.secteur,r.telephone,r.email,r.remarque].some(v=> String(v||'').toLowerCase().includes(q));
-    return okS && okC && okQ;
-  });
-}
 function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
   if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
   if(st==='Neutre')return'<span class="pill neu">Neutre</span>';
@@ -155,8 +99,25 @@ function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</
   return'<span class="pill nc">Non contacté</span>'; }
 function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Neutre'||st==='Non contacté')?'row-ind':''; }
 
+function filtered(){
+  const q = (state.filters.q||'').toLowerCase();
+  return state.rows.filter(r=>{
+    const okS = !state.filters.status || r.statut===state.filters.status;
+    const okQ = !q || [r.nom,r.adresse,r.secteur,r.telephone,r.email,r.remarque].some(v=> String(v||'').toLowerCase().includes(q));
+    return okS && okQ;
+  });
+}
+function updateStats(){
+  const fav = state.rows.filter(r=>r.statut==='Favorable').length;
+  const def = state.rows.filter(r=>r.statut==='Défavorable').length;
+  const neu = state.rows.filter(r=>r.statut==='Neutre').length;
+  const abs = state.rows.filter(r=>r.statut==='Absent').length;
+  const nc  = state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
+  $('stats').textContent = ` | Fav: ${fav}  Déf: ${def}  Neutre: ${neu}  Absent: ${abs}  Non contacté: ${nc}  | Total: ${state.rows.length}`;
+}
 function render(){
-  $('tbody').innerHTML = filtered().map(r=>`
+  const rows = filtered();
+  $('tbody').innerHTML = rows.map(r=>`
     <tr class="${rowCls(r.statut)}">
       <td>${escapeHtml(r.nom)}</td>
       <td>${escapeHtml(r.adresse)}</td>
@@ -174,9 +135,62 @@ function render(){
       </td>
     </tr>
   `).join('');
+  updateStats();
 }
 
-/* EVENTS */
+/*** DATA LOAD ***/
+async function loadContacts(){
+  // Lis ce dont on a besoin ; ajuste si tes colonnes diffèrent
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id, first_name, last_name, address, sector, phone, email')
+    .order('last_name', { ascending: true })
+    .limit(10000);
+  if (error) { console.error('loadContacts', error); alert(error.message); return; }
+
+  state.rows = (data||[]).map(c => ({
+    id: c.id,
+    nom: [c.first_name, c.last_name].filter(Boolean).join(' '),
+    adresse: c.address,
+    secteur: c.sector,
+    telephone: c.phone || '',
+    email: c.email || '',
+    statut: 'Non contacté',
+    remarque: ''
+  }));
+  state.indexById = {}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+  render();
+}
+
+/*** AUTH FLOW ***/
+async function boot() {
+  const { data:{ session }, error } = await supabase.auth.getSession();
+  console.log('[boot] session=', session, 'error=', error);
+  if (session?.user){
+    $('who').textContent = session.user.email || session.user.id;
+    $('authCard').classList.add('hidden');
+    $('appCard').classList.remove('hidden');
+    await loadContacts();
+  } else {
+    $('appCard').classList.add('hidden');
+    $('authCard').classList.remove('hidden');
+  }
+}
+
+$('btnSignIn').onclick = async () => {
+  const email = $('email').value.trim().toLowerCase();
+  const password = $('password').value.trim();
+  $('authError').textContent = '';
+  if (!email || !password) { $('authError').textContent = 'Entre ton email et ton mot de passe.'; return; }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error){ console.error('[login]', error); $('authError').textContent = error.message || 'Connexion impossible.'; return; }
+  await boot();
+};
+$('btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); await boot(); };
+supabase.auth.onAuthStateChange(()=> boot());
+boot();
+
+/*** EVENTS: statut + champs éditables ***/
 document.addEventListener('click', async (e)=>{
   const b = e.target.closest('button[data-act="set"]');
   if(!b) return;
@@ -184,27 +198,44 @@ document.addEventListener('click', async (e)=>{
   const { data: u } = await supabase.auth.getUser();
   const updated_by = u?.user?.id;
   const { error } = await supabase.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
-  if (error) return alert(error.message);
+  if (error) { console.error('set status', error); alert(error.message); return; }
   const i = state.indexById[id]; if (i!=null){ state.rows[i].statut = val; render(); }
 });
 document.addEventListener('input', async (e)=>{
   const el = e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
   const id = el.dataset.id, field = el.dataset.field, val = el.value;
-  const patch = {}; if (field==='telephone') patch.phone = val; if (field==='email') patch.email = val;
+  const patch = {}; if (field==='telephone') patch.phone = val; if (field==='email') patch.email = val; // remarque reste locale
   if (Object.keys(patch).length){
     const { error } = await supabase.from('contacts').update(patch).eq('id', id);
-    if (error) alert(error.message);
+    if (error) { console.error('update contact', error); alert(error.message); }
+  } else if (field==='remarque') {
+    // si tu veux persister la remarque dans une table "visits" ou "notes", ajoute ici
   }
 });
 $('q').oninput = e=>{ state.filters.q = e.target.value; render(); };
 $('fStatus').onchange = e=>{ state.filters.status = e.target.value; render(); };
-$('fSect').onchange   = e=>{ state.filters.sect   = e.target.value; render(); };
 $('btnReload').onclick = loadContacts;
 
-/* START */
-supabase.auth.onAuthStateChange(()=> boot());
-boot();
+/*** EXPORT CSV ***/
+function toCSV(rows){
+  const cols = ['Nom','Adresse','Secteur','Téléphone','Email','Statut','Remarque'];
+  const esc = v => `"${String(v??'').replace(/"/g,'""')}"`;
+  const head = cols.join(';');
+  const body = rows.map(r=>[r.nom,r.adresse,r.secteur,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
+  return head+'\n'+body;
+}
+function downloadCSV(name, rows){
+  const blob = new Blob([toCSV(rows)], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.endsWith('.csv')? name : name+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+$('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
+$('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
+$('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>!r.statut || ['Neutre','Non contacté'].includes(r.statut)));
 </script>
 </body>
 </html>
+
 
