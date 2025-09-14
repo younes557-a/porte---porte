@@ -100,6 +100,7 @@
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
   const state = { rows:[], indexByKey:{}, filters:{q:'',status:'',bureau:''}, bureauOptions:[] };
 
+  // Badges & couleurs
   function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
     if(st==='Indécis')return'<span class="pill ind">Indécis</span>';
@@ -107,6 +108,7 @@
     return'<span class="pill nc">Non contacté</span>'; }
   function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
 
+  // Mapping FR/EN & clé
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
   function pickKeyCol(obj){
     const candidates = ['id','uuid','contact_id','id_contact','identifiant','Identifiant','pk','rowid'];
@@ -114,16 +116,16 @@
     return Object.keys(obj)[0];
   }
   function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','rue','voie']);
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
     const cp  = pick(obj, ['code postal','code_postal']);
     const com = pick(obj, ['commune','ville']);
     return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
   }
   function buildNomPieces(obj){
-    const first = (pick(obj, ['prenom','prénom','prénoms'])||'').toString().trim();
-    const lastUsage = (pick(obj, ['nom d’usage','nom_usage'])||'').toString().trim();
-    const lastBirth = (pick(obj, ['nom de naissance','nom_naissance'])||'').toString().trim();
+    const first = (pick(obj, ['first_name','prenom','prénom','prénoms'])||'').toString().trim();
+    const lastUsage = (pick(obj, ['last_name','nom d’usage','nom d\'usage','nom_usage'])||'').toString().trim();
+    const lastBirth = (pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance'])||'').toString().trim();
     const last = lastUsage || lastBirth || pick(obj,['nom']) || '';
     return { first, last };
   }
@@ -135,6 +137,7 @@
     return '';
   }
 
+  // Filtres & rendu
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
@@ -180,6 +183,7 @@
     updateStats();
   }
 
+  // Pagination 1000 par 1000
   async function fetchAllContacts(){
     const pageSize = 1000;
     let from = 0, to = pageSize-1, all = [];
@@ -194,6 +198,7 @@
     return { data: all, error: null };
   }
 
+  // Chargement + préparation
   async function loadContacts(){
     const { data, error } = await fetchAllContacts();
     if (error){ alert(error.message); return; }
@@ -201,23 +206,30 @@
     const rows = (data||[]).map(c=>{
       const keyCol = pickKeyCol(c);
       const keyVal = c[keyCol];
-      const codeBV = pick(c, ['code du bureau de vote','code_bv']);
-      const libBV  = pick(c, ['libellé du bureau de vote','libelle_bv']);
+      const codeBV = pick(c, ['code du bureau de vote','code_bureau_de_vote','code_bureau','code_bv','code_bureau_vote','code_bureau de vote']);
+      const libBV  = pick(c, ['libellé du bureau de vote','libellé du bureau','libelle_du_bureau_de_vote','libelle du bureau de vote','libelle_bureau','libelle_bv']);
       const bureauAffiche = [codeBV, libBV].filter(Boolean).join(' — ');
       const bureauKey = `${codeBV}||${libBV}`;
       const nomAffiche = formatNom(c);
       let statut = c.status || 'Non contacté';
       if (statut === 'Neutre') statut = 'Indécis';
-      return { keyCol, keyVal, nomAffiche, adresse: buildAdresse(c),
-        telephone: pick(c, ['phone','téléphone']),
+      return {
+        keyCol, keyVal,
+        nomAffiche,
+        adresse: buildAdresse(c),
+        telephone: pick(c, ['phone','téléphone','telephone']),
         email: pick(c, ['email','courriel']),
-        statut, remarque: c.remark || '',
-        bureauAffiche, bureauKey };
+        statut,
+        remarque: c.remark || '',
+        bureauAffiche,
+        bureauKey
+      };
     });
 
     state.rows = rows;
     state.indexByKey={}; state.rows.forEach((r,i)=> state.indexByKey[`${r.keyCol}:${r.keyVal}`]=i);
 
+    // options filtre bureau
     const set = new Map();
     for (const r of rows){ if (r.bureauAffiche) set.set(r.bureauKey, r.bureauAffiche); }
     state.bureauOptions = Array.from(set, ([key,label])=>({key,label})).sort((a,b)=> a.label.localeCompare(b.label,'fr'));
@@ -226,6 +238,7 @@
     render();
   }
 
+  // Auth
   async function boot(){
     const { data:{ session } } = await sb.auth.getSession();
     if (session?.user){
@@ -239,9 +252,12 @@
     }
   }
 
+  // Événements
   $('btnSignIn').onclick = async ()=>{
+    $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
+    if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error){ $('authError').textContent=error.message; return; }
     await boot();
@@ -249,6 +265,7 @@
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
   sb.auth.onAuthStateChange(()=> boot());
 
+  // Clic statut => UPDATE status (clé auto-détectée)
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]');
     if(!b) return;
@@ -261,6 +278,7 @@
     if (i!=null){ state.rows[i].statut = val; render(); }
   });
 
+  // Édition tel/email/remark => UPDATE
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]');
     if(!el) return;
@@ -277,11 +295,13 @@
     }
   });
 
+  // Filtres & actions
   $('q').oninput       = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange= e=>{ state.filters.status=e.target.value; render(); };
   $('fBureau').onchange= e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
+  // Exports
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
@@ -291,10 +311,11 @@
     const blob=new Blob([toCSV(rows)],{type:'text/csv;charset=utf-8;'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(name.endsWith('.csv')?name:name+'.csv'); a.click(); URL.revokeObjectURL(a.href);
   }
-  $('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
-  $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
-  $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=> r.statut === 'Indécis'));
+  document.getElementById('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
+  document.getElementById('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
+  document.getElementById('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=> r.statut === 'Indécis'));
 
+  // Démarrage
   boot();
 })();
 </script>
