@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Porte-à-porte — Import universel CSV (sécurisé)</title>
+<title>Porte-à-porte — Supabase</title>
 <style>
   :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
   *{box-sizing:border-box}
@@ -13,85 +13,53 @@
   .muted{color:var(--muted);font-size:13px}
   .card{background:#fff;border-radius:14px;box-shadow:0 10px 24px -12px rgba(0,0,0,.18);padding:14px;margin-top:10px}
   .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-  .btn{border:1.5px solid var(--bd);background:#fff;color:var(--fg);border-radius:12px;padding:8px 12px;font-weight:600;cursor:pointer}
+  .btn{border:1.5px solid var(--bd);background:#fff;color:#111;border-radius:12px;padding:8px 12px;font-weight:600;cursor:pointer}
   .btn.primary{background:var(--pri);color:#fff;border-color:var(--pri)}
   .input, select, textarea{border:1.5px solid var(--bd);border-radius:10px;padding:8px 10px;background:#fff;color:#111}
-  input[type="file"]{border:none}
   table{border-collapse:collapse;width:100%;font-size:14px}
   thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px}
   tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
   .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
-  .pill.fav{background:#dcfce7;color:#166534}
-  .pill.def{background:#fee2e2;color:#991b1b}
-  .pill.neu{background:#fef9c3;color:#854d0e}
-  .pill.abs{background:#e5e7eb;color:#111827}
-  .pill.nc{background:#e5e7eb;color:#1f2937}
-  .row-fav{background:#eaffea}
-  .row-def{background:#ffecec}
-  .row-ind{background:#f3f4f6}
-  .bar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden}
-  .bar>div{height:8px;background:var(--pri);width:0%}
-  .cell-input{min-width:140px;max-width:220px}
-  .switch{display:inline-flex;gap:6px;align-items:center;font-size:13px}
+  .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
+  .pill.neu{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+  .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
+  .hidden{display:none}
 </style>
 </head>
 <body>
-
-<!-- Mot de passe -->
-<script>
-  const correctPassword = "Ris2026Renouveaucitoyen!";
-  let input = prompt("Veuillez entrer le mot de passe :");
-  if (input !== correctPassword) {
-    document.body.innerHTML = "<h1 style='color:red;text-align:center;margin-top:20%'>Accès refusé ❌</h1>";
-    throw new Error("Mot de passe incorrect");
-  }
-</script>
-
 <div class="wrap">
-  <h1>Porte-à-porte — Import CSV</h1>
-  <div class="muted">Fonctionne hors-ligne. Accepte CSV séparateur ; , ou tab. En-têtes FR auto-détectées.</div>
+  <h1>Porte-à-porte — Supabase</h1>
+  <div class="muted">Connexion requise. Accès limité par secteurs (RLS).</div>
 
-  <div class="card">
-    <div class="row" style="gap:10px">
-      <input id="file" type="file" accept=".csv,text/csv" />
-      <button id="demo" class="btn">Charger un petit exemple</button>
-      <span class="switch">
-        <input type="checkbox" id="persist" />
-        <label for="persist">Activer la sauvegarde locale (conserver les saisies)</label>
-      </span>
+  <!-- Auth -->
+  <div id="authCard" class="card">
+    <div class="row" style="gap:10px;align-items:flex-end">
+      <div><div class="muted">Email</div><input id="email" class="input" placeholder="benevole@asso.fr" /></div>
+      <div><div class="muted">Mot de passe</div><input id="password" type="password" class="input" placeholder="••••••••" /></div>
+      <button id="btnSignIn" class="btn primary">Se connecter</button>
+      <button id="btnSignUp" class="btn">Créer un compte</button>
     </div>
-    <div class="row" style="gap:8px;margin-top:10px">
-      <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1" />
-      <select id="fStatus" class="input">
-        <option value="">Tous les statuts</option>
-        <option>Favorable</option>
-        <option>Défavorable</option>
-        <option>Neutre</option>
-        <option>Absent</option>
-        <option>Non contacté</option>
-      </select>
-      <select id="fSect" class="input"><option value="">Tous secteurs</option></select>
-      <button id="expAll" class="btn primary">Exporter CSV (tout)</button>
-      <button id="expFav" class="btn">CSV Favorables</button>
-      <button id="expInd" class="btn">CSV Indécis</button>
-    </div>
-    <div class="row" style="margin-top:10px;gap:10px">
-      <div style="flex:1">
-        <div class="muted" style="margin-bottom:4px">Progression</div>
-        <div class="bar"><div id="barProg"></div></div>
-        <div id="txtProg" class="muted" style="margin-top:4px">0/0 traités</div>
-      </div>
-      <div class="row" style="gap:14px">
-        <div class="muted">Fav: <b id="cFav">0</b></div>
-        <div class="muted">Déf: <b id="cDef">0</b></div>
-        <div class="muted">Neutre: <b id="cNeu">0</b></div>
-        <div class="muted">Non contacté: <b id="cNC">0</b></div>
-      </div>
-    </div>
+    <div class="muted" style="margin-top:6px">Astuce : désactive la création libre dans Supabase (Invite user seulement).</div>
   </div>
 
-  <div class="card">
-    <div style="max-height:65vh;overflow:auto">
+  <!-- App -->
+  <div id="appCard" class="card hidden">
+    <div class="row" style="justify-content:space-between">
+      <div class="muted">Connecté : <b id="who"></b></div>
+      <div class="row">
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1" />
+        <select id="fStatus" class="input">
+          <option value="">Tous les statuts</option>
+          <option>Favorable</option><option>Défavorable</option>
+          <option>Neutre</option><option>Absent</option><option>Non contacté</option>
+        </select>
+        <select id="fSect" class="input"><option value="">Tous secteurs</option></select>
+        <button id="btnReload" class="btn">Recharger</button>
+        <button id="btnSignOut" class="btn">Se déconnecter</button>
+      </div>
+    </div>
+
+    <div style="max-height:65vh;overflow:auto;margin-top:10px">
       <table>
         <thead>
           <tr>
@@ -103,268 +71,140 @@
         <tbody id="tbody"></tbody>
       </table>
     </div>
-    <div class="muted" style="margin-top:6px">Astuce : si votre fichier est en XLSX, enregistrez-le en CSV (séparateur ; recommandé) puis importez-le ici.</div>
   </div>
 </div>
 
-<script>
-const LS_KEY = 'ppa_csv_import_secure_v1';
-let usePersist = false;
-let rows = [];
-let indexById = {};
-let filters = { q:'', status:'', sect:'' };
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-const $ = id => document.getElementById(id);
-const escapeHtml = s => String(s).replace(/[&<>\"']/g, m => ({"&":"&amp;","<":"&lt;","&gt;":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-const norm = s => (s||'').toString().trim();
-const lower = s => norm(s).toLowerCase();
+/* >>>>>>>>> CONFIG SUPABASE (TES VALEURS) <<<<<<<<< */
+const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
-function save(){ if(!usePersist) return; try{ localStorage.setItem(LS_KEY, JSON.stringify({rows})); }catch(e){} }
-function load(){
-  try{
-    const raw = localStorage.getItem(LS_KEY);
-    if(!raw) return false;
-    const st = JSON.parse(raw);
-    if(Array.isArray(st.rows)){ rows = st.rows; return true; }
-  }catch(e){}
-  return false;
-}
+/* UI helpers */
+const $ = (id)=> document.getElementById(id);
+const escapeHtml = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;","&gt;":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+const state = { rows: [], indexById: {}, filters:{q:'',status:'',sect:''} };
 
-function detectDelimiter(line){
-  const esc = d => d.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-  const count = (s,d)=> (s.match(new RegExp(esc(d),'g'))||[]).length;
-  const semis = count(line,';'), commas = count(line,','), tabs=count(line,'\t');
-  if(Math.max(semis,commas,tabs)===tabs) return '\t';
-  if(Math.max(semis,commas,tabs)===semis) return ';';
-  return ',';
-}
+/* AUTH */
+$('btnSignIn').onclick = async ()=>{
+  const email = $('email').value.trim(), password = $('password').value;
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return alert(error.message);
+  await boot();
+};
+$('btnSignUp').onclick = async ()=>{
+  const email = $('email').value.trim(), password = $('password').value;
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) return alert(error.message);
+  alert('Compte créé. Connecte-toi.');
+};
+$('btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); $('appCard').classList.add('hidden'); $('authCard').classList.remove('hidden'); };
 
-// CSV parser compatible guillemets
-function parseCSV(text){
-  text = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
-  const firstLine = text.split('\n',1)[0] || '';
-  const delim = detectDelimiter(firstLine);
-  const out = [];
-  let i=0, field='', row=[], inQuotes=false;
-  while(i<text.length){
-    const ch = text[i];
-    if(ch === '"'){
-      if(inQuotes && text[i+1] === '"'){ field+='"'; i+=2; continue; }
-      inQuotes = !inQuotes; i++; continue;
-    }
-    if(!inQuotes && (ch===delim || ch==='\n')){
-      row.push(field); field='';
-      if(ch==='\n'){ out.push(row); row=[]; }
-      i++; continue;
-    }
-    field += ch; i++;
-  }
-  row.push(field); out.push(row);
-  if(out.length && out[out.length-1].every(v=>v==='')) out.pop();
-  return {rows: out, delim};
+async function boot(){
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user){ $('authCard').classList.remove('hidden'); $('appCard').classList.add('hidden'); return; }
+  $('who').textContent = user.email || user.id;
+  $('authCard').classList.add('hidden'); $('appCard').classList.remove('hidden');
+  await loadContacts();
 }
 
-function mapHeaders(headers){
-  const pick = (...keys)=> {
-    const set = headers.map(h=>({raw:h, key:lower(h)}));
-    for(const k of keys){
-      const kl = lower(k);
-      const hit = set.find(x=> x.key===kl);
-      if(hit) return hit.raw;
-      const hit2 = set.find(x=> x.key.startsWith(kl));
-      if(hit2) return hit2.raw;
-    }
-    return null;
-  };
-  return {
-    prenoms: pick("prénoms","prenoms","prenom","prénom"),
-    nomUsage: pick("nom d'usage","nom d’usage","nom"),
-    nomNaissance: pick("nom de naissance","nom naissance"),
-    numVoie: pick("numéro de voie","numero de voie","n° voie","num voie","numéro","numero"),
-    libVoie: pick("libellé de voie","libelle de voie","voie","rue","adresse"),
-    bureau: pick("libellé du bureau de vote","libelle du bureau de vote","bureau de vote","secteur"),
-    favorable: pick("favorable"),
-    defavorable: pick("défavorable","defavorable")
-  };
+/* DATA */
+async function loadContacts(){
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id, first_name, last_name, address, sector, phone, email')
+    .order('last_name', { ascending: true })
+    .limit(5000);
+  if (error) { alert(error.message); return; }
+
+  state.rows = (data||[]).map(c => ({
+    id: c.id,
+    nom: [c.first_name, c.last_name].filter(Boolean).join(' '),
+    adresse: c.address,
+    secteur: c.sector,
+    telephone: c.phone || '',
+    email: c.email || '',
+    statut: 'Non contacté',
+    remarque: ''
+  }));
+  rebuild(); render();
 }
-function toBool(v){
-  const s = lower(v);
-  return ["1","x","oui","true","vrai","o","y"].includes(s);
-}
-function buildRows(matrix){
-  if(!matrix.length) return [];
-  const headers = matrix[0];
-  const map = mapHeaders(headers);
-  const idx = h => h ? headers.indexOf(h) : -1;
-  const idPrenoms = idx(map.prenoms),
-        idUsage   = idx(map.nomUsage),
-        idNnee    = idx(map.nomNaissance),
-        idNum     = idx(map.numVoie),
-        idVoie    = idx(map.libVoie),
-        idBur     = idx(map.bureau),
-        idFav     = idx(map.favorable),
-        idDef     = idx(map.defavorable);
-  const out = [];
-  for(let r=1;r<matrix.length;r++){
-    const row = matrix[r];
-    const prenoms = norm(row[idPrenoms]);
-    const nomU = norm(row[idUsage]);
-    const nomN = norm(row[idNnee]);
-    const nom = (prenoms + " " + (nomU || nomN)).trim();
-    const num = norm(row[idNum]), voie = norm(row[idVoie]);
-    const adresse = (num + " " + voie).trim();
-    const secteur = norm(row[idBur]);
-    let statut = "Non contacté";
-    if(idFav>=0 && toBool(row[idFav])) statut = "Favorable";
-    else if(idDef>=0 && toBool(row[idDef])) statut = "Défavorable";
-    out.push({
-      id: (Math.random().toString(36).slice(2,14)),
-      nom, adresse, secteur,
-      telephone: "", email: "",
-      statut, remarque: ""
-    });
-  }
-  return out;
-}
+
 function rebuild(){
-  indexById = {}; rows.forEach((r,i)=> indexById[r.id]=i);
-  const sects=[...new Set(rows.map(r=>r.secteur||'').filter(Boolean))].sort();
-  $('fSect').innerHTML = ['<option value="">Tous secteurs</option>']
-    .concat(sects.map(s=>`<option>${escapeHtml(s)}</option>`)).join('');
+  state.indexById = {};
+  state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+  const sects = [...new Set(state.rows.map(r=>r.secteur||'').filter(Boolean))].sort();
+  $('fSect').innerHTML = ['<option value="">Tous secteurs</option>'].concat(sects.map(s=>`<option>${escapeHtml(s)}</option>`)).join('');
 }
-function pill(st){
-  if(st==='Favorable') return '<span class="pill fav">Favorable</span>';
-  if(st==='Défavorable') return '<span class="pill def">Défavorable</span>';
-  if(st==='Neutre') return '<span class="pill neu">Neutre</span>';
-  if(st==='Absent') return '<span class="pill abs">Absent</span>';
-  return '<span class="pill nc">Non contacté</span>';
-}
-function rowCls(st){
-  return st==='Favorable'?'row-fav': st==='Défavorable'?'row-def' : (st==='Neutre'||st==='Non contacté')?'row-ind':'';
-}
+
 function filtered(){
-  const q = lower(filters.q);
-  return rows.filter(r=>{
-    const okS = !filters.status || r.statut===filters.status;
-    const okC = !filters.sect || String(r.secteur||'')===filters.sect;
-    const okQ = !q || [r.nom,r.adresse,r.secteur,r.remarque,r.telephone,r.email]
-      .some(v=> lower(v).includes(q));
+  const q = (state.filters.q||'').toLowerCase();
+  return state.rows.filter(r=>{
+    const okS = !state.filters.status || r.statut===state.filters.status;
+    const okC = !state.filters.sect   || r.secteur===state.filters.sect;
+    const okQ = !q || [r.nom,r.adresse,r.secteur,r.telephone,r.email,r.remarque].some(v=> String(v||'').toLowerCase().includes(q));
     return okS && okC && okQ;
   });
 }
-function renderTable(){
-  const data = filtered();
-  $('tbody').innerHTML = data.map(r=> `
+function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
+  if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
+  if(st==='Neutre')return'<span class="pill neu">Neutre</span>';
+  if(st==='Absent')return'<span class="pill abs">Absent</span>';
+  return'<span class="pill nc">Non contacté</span>'; }
+function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Neutre'||st==='Non contacté')?'row-ind':''; }
+
+function render(){
+  $('tbody').innerHTML = filtered().map(r=>`
     <tr class="${rowCls(r.statut)}">
-      <td>${escapeHtml(r.nom||'')}</td>
-      <td>${escapeHtml(r.adresse||'')}</td>
+      <td>${escapeHtml(r.nom)}</td>
+      <td>${escapeHtml(r.adresse)}</td>
       <td>${escapeHtml(r.secteur||'')}</td>
-      <td class="cell-input"><input type="tel" data-id="${r.id}" data-field="telephone" class="input" placeholder="Téléphone" value="${escapeHtml(r.telephone||'')}" /></td>
-      <td class="cell-input"><input type="email" data-id="${r.id}" data-field="email" class="input" placeholder="Email" value="${escapeHtml(r.email||'')}" /></td>
+      <td><input class="input" data-id="${r.id}" data-field="telephone" value="${escapeHtml(r.telephone||'')}" /></td>
+      <td><input class="input" data-id="${r.id}" data-field="email" value="${escapeHtml(r.email||'')}" /></td>
       <td>${pill(r.statut)}</td>
-      <td><textarea data-id="${r.id}" data-field="remarque" class="input" placeholder="Note...">${escapeHtml(r.remarque||'')}</textarea></td>
+      <td><textarea class="input" data-id="${r.id}" data-field="remarque">${escapeHtml(r.remarque||'')}</textarea></td>
       <td>
-        <div class="row" style="gap:6px">
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Favorable">Favorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Défavorable">Défavorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Neutre">Neutre</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Absent">Absent</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Non contacté">Non contacté</button>
-        </div>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Favorable">Favorable</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Défavorable">Défavorable</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Neutre">Neutre</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Absent">Absent</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Non contacté">Non contacté</button>
       </td>
     </tr>
   `).join('');
-
-  const total = rows.length;
-  const treated = rows.filter(r=> r.statut && r.statut!=='Non contacté').length;
-  const pct = total? Math.round(treated*100/total):0;
-  $('barProg').style.width = pct+'%';
-  $('txtProg').textContent = `${treated}/${total} traités`;
-  const c = s=> rows.filter(r=>r.statut===s).length;
-  $('cFav').textContent = c('Favorable');
-  $('cDef').textContent = c('Défavorable');
-  $('cNeu').textContent = c('Neutre');
-  $('cNC').textContent  = rows.filter(r=>r.statut==='Non contacté').length;
-}
-function toCSV(arr){
-  if(!arr.length) return '';
-  const preferred = ['nom','adresse','secteur','telephone','email','statut','remarque'];
-  const cols = Array.from(new Set([...preferred, ...arr.flatMap(r=>Object.keys(r))])).filter(k=>k!=='id');
-  const esc = v => {
-    const s = String(v??''); return /[";,\n\t]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
-  };
-  const header = cols.map(esc).join(';');
-  const body = arr.map(r=> cols.map(k=> esc(r[k])).join(';')).join('\n');
-  return header+'\n'+body;
-}
-function download(name, text){
-  const blob = new Blob([text], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 
-// Events
-document.addEventListener('click', e=>{
+/* EVENTS */
+document.addEventListener('click', async (e)=>{
   const b = e.target.closest('button[data-act="set"]');
-  if(b){
-    const id = b.getAttribute('data-id');
-    const val = b.getAttribute('data-val');
-    const i = indexById[id];
-    if(i!=null){ rows[i].statut = val; save(); renderTable(); }
+  if(!b) return;
+  const id  = b.dataset.id, val = b.dataset.val;
+  const { data: u } = await supabase.auth.getUser();
+  const updated_by = u?.user?.id;
+  const { error } = await supabase.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
+  if (error) return alert(error.message);
+  const i = state.indexById[id]; if (i!=null){ state.rows[i].statut = val; render(); }
+});
+document.addEventListener('input', async (e)=>{
+  const el = e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
+  const id = el.dataset.id, field = el.dataset.field, val = el.value;
+  const patch = {}; if (field==='telephone') patch.phone = val; if (field==='email') patch.email = val;
+  if (Object.keys(patch).length){
+    const { error } = await supabase.from('contacts').update(patch).eq('id', id);
+    if (error) alert(error.message);
   }
 });
-document.addEventListener('input', e=>{
-  const el = e.target.closest('textarea[data-id],input[data-id]');
-  if(!el) return;
-  const id = el.getAttribute('data-id');
-  const field = el.getAttribute('data-field');
-  const i = indexById[id];
-  if(i!=null){ rows[i][field] = el.value; save(); }
-});
-$('q').addEventListener('input', e=>{ filters.q = e.target.value; renderTable(); });
-$('fStatus').addEventListener('change', e=>{ filters.status = e.target.value; renderTable(); });
-$('fSect').addEventListener('change', e=>{ filters.sect = e.target.value; renderTable(); });
+$('q').oninput = e=>{ state.filters.q = e.target.value; render(); };
+$('fStatus').onchange = e=>{ state.filters.status = e.target.value; render(); };
+$('fSect').onchange   = e=>{ state.filters.sect   = e.target.value; render(); };
+$('btnReload').onclick = loadContacts;
 
-$('expAll').addEventListener('click', ()=> download(`porte_a_porte_${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows)));
-$('expFav').addEventListener('click', ()=> download(`favorables_${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows.filter(r=> r.statut==='Favorable'))));
-$('expInd').addEventListener('click', ()=> download(`indecis_${new Date().toISOString().slice(0,10)}.csv`, toCSV(rows.filter(r=> r.statut==='Neutre' || r.statut==='Non contacté'))));
-
-$('persist').addEventListener('change', e=>{ usePersist = e.target.checked; if(usePersist){ save(); } });
-
-function loadCSV(file){
-  const reader = new FileReader();
-  reader.onload = () => {
-    try{
-      const text = reader.result;
-      const parsed = parseCSV(text);
-      const matrix = parsed.rows;
-      if(matrix.length<2) { alert("CSV vide ou en-têtes manquants."); return; }
-      rows = buildRows(matrix);
-      if(usePersist){ save(); }
-      rebuild(); renderTable();
-    }catch(err){
-      console.error(err);
-      alert("Erreur de lecture du CSV. Vérifie l'encodage (UTF-8 recommandé).");
-    }
-  };
-  reader.onerror = () => alert("Impossible de lire le fichier.");
-  reader.readAsText(file, 'utf-8');
-}
-$('file').addEventListener('change', e=>{
-  const f = e.target.files && e.target.files[0];
-  if(!f) return;
-  loadCSV(f);
-});
-$('demo').addEventListener('click', ()=>{
-  const csv = `Prénoms;Nom d'usage;Numéro de voie;Libellé de voie;Libellé du bureau de vote;Favorable;Défavorable
-Alice;Martin;12;Rue des Lilas;Bureau 1;1;
-Bob;Durand;8;Avenue Victor Hugo;Bureau 2;;1
-Chloé;Bernard;5;Bd de la République;Bureau 1;;`;
-  const parsed = parseCSV(csv);
-  rows = buildRows(parsed.rows);
-  rebuild(); renderTable();
-});
-if(load()){ rebuild(); renderTable(); }
+/* START */
+supabase.auth.onAuthStateChange(()=> boot());
+boot();
 </script>
 </body>
 </html>
+
