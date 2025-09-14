@@ -17,18 +17,17 @@
     .btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}
     .input, select, textarea{border:1.5px solid #111;border-radius:10px;padding:8px 10px;background:#fff;color:#111}
     table{border-collapse:collapse;width:100%;font-size:14px}
-    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px}
+    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;z-index:1}
     tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
     .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
     .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
-    .pill.neu{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+    .pill.ind{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
     .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
-    .ok{color:#15803d}.warn{color:#b45309}.err{color:#b91c1c}
   </style>
 
-  <!-- SDK Supabase (UMD global) -->
+  <!-- SDK Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
@@ -40,7 +39,7 @@
 <body>
 <div class="wrap">
   <h1>Porte-à-porte — Supabase</h1>
-  <div class="muted">Connexion requise. Accès pour tous les secteurs.</div>
+  <div class="muted">Connexion requise. Tous les bénévoles voient la liste complète.</div>
 
   <!-- AUTH -->
   <div id="authCard" class="card">
@@ -57,11 +56,14 @@
     <div class="row" style="justify-content:space-between">
       <div class="muted">Connecté : <b id="who"></b></div>
       <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:260px" />
+        <input id="q" class="input" placeholder="Recherche (Nom, Adresse, Téléphone, Email, Remarque)..." style="flex:1;min-width:260px" />
+        <select id="fBureau" class="input">
+          <option value="">Tous les bureaux de vote</option>
+        </select>
         <select id="fStatus" class="input">
           <option value="">Tous les statuts</option>
           <option>Favorable</option><option>Défavorable</option>
-          <option>Neutre</option><option>Absent</option><option>Non contacté</option>
+          <option>Indécis</option><option>Absent</option><option>Non contacté</option>
         </select>
         <button id="btnReload" class="btn">Recharger</button>
         <button id="btnSignOut" class="btn">Se déconnecter</button>
@@ -79,7 +81,7 @@
       <table>
         <thead>
           <tr>
-            <th>Nom</th><th>Adresse</th><th>Secteur</th>
+            <th>Nom</th><th>Adresse</th><th>Bureau de vote</th>
             <th>Téléphone</th><th>Email</th>
             <th>Statut</th><th>Remarque</th><th>Actions</th>
           </tr>
@@ -95,41 +97,74 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  const state = { rows:[], indexById:{}, filters:{q:'',status:''} };
+  const state = { rows:[], indexByKey:{}, filters:{q:'',status:'',bureau:''}, bureauOptions:[] };
 
   function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
-    if(st==='Neutre')return'<span class="pill neu">Neutre</span>';
+    if(st==='Indécis')return'<span class="pill ind">Indécis</span>';
     if(st==='Absent')return'<span class="pill abs">Absent</span>';
     return'<span class="pill nc">Non contacté</span>'; }
-  function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Neutre'||st==='Non contacté')?'row-ind':''; }
+  function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
+
+  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
+  function pickKeyCol(obj){
+    const candidates = ['id','uuid','contact_id','id_contact','identifiant','Identifiant','pk','rowid'];
+    for (const k of candidates){ if (k in obj) return k; }
+    return Object.keys(obj)[0];
+  }
+  function buildAdresse(obj){
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','rue','voie']);
+    const cp  = pick(obj, ['code postal','code_postal']);
+    const com = pick(obj, ['commune','ville']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
+  }
+  function buildNomPieces(obj){
+    const first = (pick(obj, ['prenom','prénom','prénoms'])||'').toString().trim();
+    const lastUsage = (pick(obj, ['nom d’usage','nom_usage'])||'').toString().trim();
+    const lastBirth = (pick(obj, ['nom de naissance','nom_naissance'])||'').toString().trim();
+    const last = lastUsage || lastBirth || pick(obj,['nom']) || '';
+    return { first, last };
+  }
+  function formatNom(obj){
+    const { first, last } = buildNomPieces(obj);
+    if (last && first) return `${last.toUpperCase()}, ${first}`;
+    if (last) return last.toUpperCase();
+    if (first) return first;
+    return '';
+  }
 
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
-      const okQ=!q || [r.nom,r.adresse,r.secteur,r.telephone,r.email,r.remarque]
+      const okB=!state.filters.bureau || r.bureauKey===state.filters.bureau;
+      const okQ=!q || [r.nomAffiche,r.adresse,r.telephone,r.email,r.remarque,r.bureauAffiche]
         .some(v=> String(v||'').toLowerCase().includes(q));
-      return okS && okQ;
+      return okS && okB && okQ;
     });
   }
   function updateStats(){
     const fav=state.rows.filter(r=>r.statut==='Favorable').length;
     const def=state.rows.filter(r=>r.statut==='Défavorable').length;
-    const neu=state.rows.filter(r=>r.statut==='Neutre').length;
+    const ind=state.rows.filter(r=>r.statut==='Indécis').length;
     const abs=state.rows.filter(r=>r.statut==='Absent').length;
     const nc =state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
-    $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Neutre: ${neu} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
+    $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Indécis: ${ind} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
+  }
+  function renderBureauOptions(){
+    const sel = $('fBureau');
+    sel.innerHTML = '<option value="">Tous les bureaux de vote</option>' +
+      state.bureauOptions.map(o=>`<option value="${EH(o.key)}">${EH(o.label)}</option>`).join('');
   }
   function render(){
     const rows=filtered();
     $('tbody').innerHTML=rows.map(r=>`
       <tr class="${rowCls(r.statut)}">
-        <td>${EH(r.nom)}</td>
+        <td>${EH(r.nomAffiche)}</td>
         <td>${EH(r.adresse)}</td>
-        <td>${EH(r.secteur||'')}</td>
+        <td>${EH(r.bureauAffiche)}</td>
         <td><input class="input" data-id="${r.keyVal}" data-key="${r.keyCol}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
         <td><input class="input" data-id="${r.keyVal}" data-key="${r.keyCol}" data-field="email" value="${EH(r.email||'')}" /></td>
         <td>${pill(r.statut)}</td>
@@ -137,7 +172,7 @@
         <td>
           <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Favorable">Favorable</button>
           <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Défavorable">Défavorable</button>
-          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Neutre">Neutre</button>
+          <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Indécis">Indécis</button>
           <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Absent">Absent</button>
           <button class="btn" data-act="set" data-id="${r.keyVal}" data-key="${r.keyCol}" data-val="Non contacté">Non contacté</button>
         </td>
@@ -145,56 +180,54 @@
     updateStats();
   }
 
-  // ---- mapping FR/EN + DÉTECTION DE CLÉ ----
-  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
-  function pickKeyCol(obj){
-    const candidates = ['id','uuid','contact_id','id_contact','identifiant','Identifiant','pk','rowid'];
-    for (const k of candidates){ if (k in obj) return k; }
-    // fallback : première clé de l'objet (peu recommandé, mais mieux que rien)
-    return Object.keys(obj)[0];
-  }
-  function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
-    const cp  = pick(obj, ['code postal','code_postal']);
-    const com = pick(obj, ['commune','ville']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
-  }
-  function buildNom(obj){
-    const first = pick(obj, ['first_name','prenom','prénom','prénoms']);
-    const lastUsage = pick(obj, ['last_name','nom d’usage','nom d\'usage','nom_usage']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
-    const last = lastUsage || lastBirth || pick(obj,['nom']);
-    return [first,last].filter(Boolean).join(' ') || pick(obj,['name']);
+  async function fetchAllContacts(){
+    const pageSize = 1000;
+    let from = 0, to = pageSize-1, all = [];
+    while(true){
+      const { data, error } = await sb.from('contacts').select('*').range(from, to);
+      if (error){ return { error, data: null }; }
+      all = all.concat(data||[]);
+      if (!data || data.length < pageSize) break;
+      from += pageSize; to += pageSize;
+      await new Promise(r=>setTimeout(r,0));
+    }
+    return { data: all, error: null };
   }
 
-  // ====== CHARGEMENT : lit status/remark et détecte la clé ======
   async function loadContacts(){
-    const { data, error } = await sb.from('contacts').select('*').limit(20000);
-    if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
-    state.rows = (data||[]).map((c, idx)=>{
+    const { data, error } = await fetchAllContacts();
+    if (error){ alert(error.message); return; }
+
+    const rows = (data||[]).map(c=>{
       const keyCol = pickKeyCol(c);
       const keyVal = c[keyCol];
-      return {
-        keyCol, keyVal,            // ⬅️ stocke la vraie clé pour UPDATE
-        id: c.id ?? keyVal,        // pour compat UI
-        nom: buildNom(c),
-        adresse: buildAdresse(c),
-        secteur: pick(c, ['sector','secteur']),
-        telephone: pick(c, ['phone','téléphone','telephone']),
+      const codeBV = pick(c, ['code du bureau de vote','code_bv']);
+      const libBV  = pick(c, ['libellé du bureau de vote','libelle_bv']);
+      const bureauAffiche = [codeBV, libBV].filter(Boolean).join(' — ');
+      const bureauKey = `${codeBV}||${libBV}`;
+      const nomAffiche = formatNom(c);
+      let statut = c.status || 'Non contacté';
+      if (statut === 'Neutre') statut = 'Indécis';
+      return { keyCol, keyVal, nomAffiche, adresse: buildAdresse(c),
+        telephone: pick(c, ['phone','téléphone']),
         email: pick(c, ['email','courriel']),
-        statut: c.status || 'Non contacté',
-        remarque: c.remark || ''
-      };
+        statut, remarque: c.remark || '',
+        bureauAffiche, bureauKey };
     });
-    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[`${r.keyCol}:${r.keyVal}`]=i);
-    log('[contacts]', state.rows.length);
+
+    state.rows = rows;
+    state.indexByKey={}; state.rows.forEach((r,i)=> state.indexByKey[`${r.keyCol}:${r.keyVal}`]=i);
+
+    const set = new Map();
+    for (const r of rows){ if (r.bureauAffiche) set.set(r.bureauKey, r.bureauAffiche); }
+    state.bureauOptions = Array.from(set, ([key,label])=>({key,label})).sort((a,b)=> a.label.localeCompare(b.label,'fr'));
+    renderBureauOptions();
+
     render();
   }
 
   async function boot(){
-    const { data:{ session }, error } = await sb.auth.getSession();
-    log('[boot]', session ? 'SIGNED_IN' : 'NONE', error||'');
+    const { data:{ session } } = await sb.auth.getSession();
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -206,40 +239,28 @@
     }
   }
 
-  // --- Auth events ---
   $('btnSignIn').onclick = async ()=>{
-    $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
-    if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
+    if (error){ $('authError').textContent=error.message; return; }
     await boot();
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
   sb.auth.onAuthStateChange(()=> boot());
 
-  // ====== Clic statut => UPDATE contacts.status en utilisant la bonne clé ======
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]');
     if(!b) return;
     const keyVal = b.dataset.id;
     const keyCol = b.dataset.key;
     const val    = b.dataset.val;
-
-    const q = sb.from('contacts').update({ status: val }).eq(keyCol, keyVal).select();
-    const { data, error } = await q;
-    if (error){ alert(error.message); log('[update status ERROR]', error); return; }
-    if (!data || data.length === 0){
-      alert('⚠️ Statut non enregistré (0 ligne mise à jour). Clé utilisée: ' + keyCol + ' = ' + keyVal);
-      log('[update status WARN]', {keyCol, keyVal, val});
-      return;
-    }
-    const i = state.indexById[`${keyCol}:${keyVal}`];
+    const { error } = await sb.from('contacts').update({ status: val }).eq(keyCol, keyVal);
+    if (error){ alert(error.message); return; }
+    const i = state.indexByKey[`${keyCol}:${keyVal}`];
     if (i!=null){ state.rows[i].statut = val; render(); }
   });
 
-  // ====== Édition tel/email/remark => UPDATE avec la bonne clé ======
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]');
     if(!el) return;
@@ -251,26 +272,20 @@
     if(field==='telephone') patch.phone  = val;
     else if(field==='email') patch.email = val;
     else if(field==='remarque') patch.remark = val;
-
     if (Object.keys(patch).length){
-      const { data, error } = await sb.from('contacts').update(patch).eq(keyCol, keyVal).select();
-      if (error){ alert(error.message); log('[update contact ERROR]', error); }
-      else if (!data || data.length===0){ log('[update contact WARN 0-row]', {keyCol,keyVal,patch}); }
+      await sb.from('contacts').update(patch).eq(keyCol, keyVal);
     }
   });
 
-  // Filtres + rechargement
-  $('q').oninput   = e=>{ state.filters.q=e.target.value; render(); };
-  $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
+  $('q').oninput       = e=>{ state.filters.q=e.target.value; render(); };
+  $('fStatus').onchange= e=>{ state.filters.status=e.target.value; render(); };
+  $('fBureau').onchange= e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
-  // Exports
   const toCSV = rows=>{
-    const cols=['Nom','Adresse','Secteur','Téléphone','Email','Statut','Remarque'];
+    const cols=['Nom','Adresse','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    return cols.join(';')+'\n'+rows
-      .map(r=>[r.nom,r.adresse,r.secteur,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';'))
-      .join('\n');
+    return cols.join(';')+'\n'+rows.map(r=>[r.nomAffiche,r.adresse,r.bureauAffiche,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
   };
   function downloadCSV(name, rows){
     const blob=new Blob([toCSV(rows)],{type:'text/csv;charset=utf-8;'});
@@ -278,13 +293,10 @@
   }
   $('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
-  $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>!r.statut || ['Neutre','Non contacté'].includes(r.statut)));
+  $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=> r.statut === 'Indécis'));
 
-  // Go
   boot();
 })();
 </script>
 </body>
 </html>
-
-
