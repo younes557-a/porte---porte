@@ -3,99 +3,250 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Porte-à-porte — Login test</title>
+<title>Porte-à-porte — Supabase</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Inter,Arial;background:#fff;color:#111;margin:0}
-  .wrap{max-width:760px;margin:40px auto;padding:16px}
-  .card{background:#fff;border:1.5px solid #111;border-radius:14px;padding:14px}
-  .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-  .input,button{border:1.5px solid #111;border-radius:10px;padding:8px 10px}
-  button{background:#2563eb;color:#fff;border-color:#2563eb;cursor:pointer}
-  .muted{color:#555}
-  pre{background:#111;color:#0f0;padding:10px;border-radius:8px;white-space:pre-wrap}
+  :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:#fff;color:#111;margin:0}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  h1{margin:0 0 4px 0;font-size:clamp(20px,2.6vw,28px)}
+  .muted{color:#555;font-size:13px}
+  .card{background:#fff;border-radius:14px;box-shadow:0 10px 24px -12px rgba(0,0,0,.18);padding:14px;margin-top:10px;border:1.5px solid #111}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .btn{border:1.5px solid #111;background:#fff;color:#111;border-radius:12px;padding:8px 12px;font-weight:600;cursor:pointer}
+  .btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}
+  .input, select, textarea{border:1.5px solid #111;border-radius:10px;padding:8px 10px;background:#fff;color:#111}
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px}
+  tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
+  .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
+  .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
+  .pill.neu{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+  .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
+  .hidden{display:none}
+  .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Connexion — Supabase (test)</h1>
-  <p class="muted">Si ça marche ici, l’auth de ton projet est correcte.</p>
+  <h1>Porte-à-porte — Supabase</h1>
+  <div class="muted">Connexion requise. Accès pour tous les secteurs.</div>
 
+  <!-- AUTH -->
   <div id="authCard" class="card">
-    <div class="row">
-      <div>
-        <div class="muted">Email</div>
-        <input id="email" class="input" placeholder="benevole@asso.fr" />
-      </div>
-      <div>
-        <div class="muted">Mot de passe</div>
-        <input id="password" type="password" class="input" placeholder="••••••••" />
-      </div>
-      <button id="btnSignIn">Se connecter</button>
-      <button id="btnSignOut" style="background:#fff;color:#111;border-color:#111">Se déconnecter</button>
+    <div class="row" style="gap:10px;align-items:flex-end">
+      <div><div class="muted">Email</div><input id="email" class="input" placeholder="benevole@asso.fr" /></div>
+      <div><div class="muted">Mot de passe</div><input id="password" type="password" class="input" placeholder="••••••••" /></div>
+      <button id="btnSignIn" class="btn primary">Se connecter</button>
     </div>
-    <div id="err" class="muted" style="margin-top:8px;color:#b91c1c"></div>
+    <div id="authError" class="muted" style="color:#b91c1c;margin-top:6px"></div>
   </div>
 
-  <div id="okCard" class="card" style="margin-top:12px;display:none">
-    <b>Session active :</b> <span id="who"></span>
-  </div>
+  <!-- APP -->
+  <div id="appCard" class="card hidden">
+    <div class="row" style="justify-content:space-between">
+      <div class="muted">Connecté : <b id="who"></b></div>
+      <div class="row">
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:260px" />
+        <select id="fStatus" class="input">
+          <option value="">Tous les statuts</option>
+          <option>Favorable</option><option>Défavorable</option>
+          <option>Neutre</option><option>Absent</option><option>Non contacté</option>
+        </select>
+        <button id="btnReload" class="btn">Recharger</button>
+        <button id="btnSignOut" class="btn">Se déconnecter</button>
+      </div>
+    </div>
 
-  <h3>Logs</h3>
-  <pre id="log"></pre>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <button id="btnCSVAll" class="btn">Exporter CSV (tout)</button>
+      <button id="btnCSVFav" class="btn">CSV Favorables</button>
+      <button id="btnCSVIndecis" class="btn">CSV Indécis</button>
+      <span class="muted" id="stats"></span>
+    </div>
+
+    <div style="max-height:60vh;overflow:auto;margin-top:10px">
+      <table>
+        <thead>
+          <tr>
+            <th>Nom</th><th>Adresse</th><th>Secteur</th>
+            <th>Téléphone</th><th>Email</th>
+            <th>Statut</th><th>Remarque</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <details style="margin-top:10px"><summary>Logs</summary><pre class="logs" id="log"></pre></details>
+  </div>
 </div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-// === CONFIG: ton projet ===
+/*** CONFIG SUPABASE ***/
 const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession:true } });
 
-// === helpers DOM / log ===
-const $ = (id)=>document.getElementById(id);
-const log = (...a)=>{ $('log').textContent += a.map(x => typeof x==='string'? x : JSON.stringify(x,null,2)).join(' ') + '\n'; console.log(...a); };
+/*** HELPERS ***/
+const $ = id => document.getElementById(id);
+const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
+const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+const state = { rows:[], indexById:{}, filters:{q:'',status:''} };
 
-// === affichage selon session ===
-async function show(){
-  const { data:{session}, error } = await supabase.auth.getSession();
-  log('[getSession]', session ? '(OK)' : '(none)', error||'');
-  if (session?.user){
-    $('authCard').style.display = 'none';
-    $('okCard').style.display   = 'block';
-    $('who').textContent = session.user.email || session.user.id;
-  } else {
-    $('okCard').style.display   = 'none';
-    $('authCard').style.display = 'block';
-  }
+function pill(st){ if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
+  if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
+  if(st==='Neutre')return'<span class="pill neu">Neutre</span>';
+  if(st==='Absent')return'<span class="pill abs">Absent</span>';
+  return'<span class="pill nc">Non contacté</span>'; }
+function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Neutre'||st==='Non contacté')?'row-ind':''; }
+
+function filtered(){
+  const q=(state.filters.q||'').toLowerCase();
+  return state.rows.filter(r=>{
+    const okS=!state.filters.status || r.statut===state.filters.status;
+    const okQ=!q || [r.nom,r.adresse,r.secteur,r.telephone,r.email,r.remarque].some(v=> String(v||'').toLowerCase().includes(q));
+    return okS&&okQ;
+  });
+}
+function updateStats(){
+  const fav=state.rows.filter(r=>r.statut==='Favorable').length;
+  const def=state.rows.filter(r=>r.statut==='Défavorable').length;
+  const neu=state.rows.filter(r=>r.statut==='Neutre').length;
+  const abs=state.rows.filter(r=>r.statut==='Absent').length;
+  const nc =state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
+  $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Neutre: ${neu} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
+}
+function render(){
+  const rows=filtered();
+  $('tbody').innerHTML=rows.map(r=>`
+    <tr class="${rowCls(r.statut)}">
+      <td>${EH(r.nom)}</td>
+      <td>${EH(r.adresse)}</td>
+      <td>${EH(r.secteur||'')}</td>
+      <td><input class="input" data-id="${r.id}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
+      <td><input class="input" data-id="${r.id}" data-field="email" value="${EH(r.email||'')}" /></td>
+      <td>${pill(r.statut)}</td>
+      <td><textarea class="input" data-id="${r.id}" data-field="remarque">${EH(r.remarque||'')}</textarea></td>
+      <td>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Favorable">Favorable</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Défavorable">Défavorable</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Neutre">Neutre</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Absent">Absent</button>
+        <button class="btn" data-act="set" data-id="${r.id}" data-val="Non contacté">Non contacté</button>
+      </td>
+    </tr>`).join('');
+  updateStats();
 }
 
-// === actions ===
+/*** MAPPING ROBUSTE DES COLONNES ***/
+function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
+function buildAdresse(obj){
+  const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
+  const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
+  const cp  = pick(obj, ['code postal','code_postal']);
+  const com = pick(obj, ['commune','ville']);
+  return [num,lib,cp,com].filter(Boolean).join(' ');
+}
+function buildNom(obj){
+  const first = pick(obj, ['first_name','prenom','prénom','prénoms']);
+  const lastUsage = pick(obj, ['last_name','nom d’usage','nom d\'usage','nom_usage','nom d’'+'usage','nom d’Usage']);
+  const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
+  const last = lastUsage || lastBirth || '';
+  if (first || last) return [first,last].filter(Boolean).join(' ');
+  // fallback : champ "nom"
+  return pick(obj, ['nom','name']);
+}
+
+/*** CHARGEMENT DES CONTACTS ***/
+async function loadContacts(){
+  // on prend tout, pour mapper sans casser
+  const { data, error } = await supabase.from('contacts').select('*').limit(20000);
+  if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
+  state.rows = (data||[]).map(c=>({
+    id: c.id,
+    nom: buildNom(c),
+    adresse: buildAdresse(c) || pick(c,['address','adresse']),
+    secteur: pick(c, ['sector','secteur']),
+    telephone: pick(c, ['phone','téléphone','telephone']),
+    email: pick(c, ['email','courriel']),
+    statut: 'Non contacté',
+    remarque: ''
+  }));
+  state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+  log('[contacts]', state.rows.length);
+  render();
+}
+
+/*** AUTH FLOW ***/
+async function boot(){
+  const { data:{ session }, error } = await supabase.auth.getSession();
+  log('[boot]', session ? 'SIGNED_IN' : 'NONE', error||'');
+  if (session?.user){
+    $('who').textContent = session.user.email || session.user.id;
+    $('authCard').classList.add('hidden');
+    $('appCard').classList.remove('hidden');
+    await loadContacts();
+  } else {
+    $('appCard').classList.add('hidden');
+    $('authCard').classList.remove('hidden');
+  }
+}
 $('btnSignIn').onclick = async ()=>{
-  $('err').textContent = '';
-  const email = $('email').value.trim().toLowerCase();
-  const password = $('password').value.trim();
+  $('authError').textContent='';
+  const email=$('email').value.trim().toLowerCase();
+  const password=$('password').value.trim();
   log('[login click]', {email, passwordLen: password.length});
-  if(!email || !password){ $('err').textContent = 'Saisis email et mot de passe.'; return; }
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error){ $('err').textContent = error.message; log('[login ERROR]', error); return; }
-  log('[login OK]', data?.user?.email||data?.user?.id);
-  await show();
+  if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
+  log('[login OK]');
+  await boot();
 };
-$('btnSignOut').onclick = async ()=>{
-  await supabase.auth.signOut();
-  log('[signOut] done');
-  await show();
+$('btnSignOut').onclick = async ()=>{ await supabase.auth.signOut(); await boot(); };
+supabase.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt, 'true'); boot(); });
+boot();
+
+/*** EVENTS : statut + éditions ***/
+document.addEventListener('click', async (e)=>{
+  const b = e.target.closest('button[data-act="set"]'); if(!b) return;
+  const id=b.dataset.id, val=b.dataset.val;
+  const { data: u } = await supabase.auth.getUser();
+  const updated_by = u?.user?.id;
+  const { error } = await supabase.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
+  if (error){ alert(error.message); log('[set status ERROR]', error); return; }
+  const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = val; render(); }
+});
+document.addEventListener('input', async (e)=>{
+  const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
+  const id=el.dataset.id, field=el.dataset.field, val=el.value;
+  const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val;
+  if (Object.keys(patch).length){
+    const { error } = await supabase.from('contacts').update(patch).eq('id', id);
+    if (error){ alert(error.message); log('[update contact ERROR]', error); }
+  }
+});
+
+/*** EXPORT CSV ***/
+const toCSV = rows=>{
+  const cols=['Nom','Adresse','Secteur','Téléphone','Email','Statut','Remarque'];
+  const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+  return cols.join(';')+'\n'+rows.map(r=>[r.nom,r.adresse,r.secteur,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
 };
-
-// === écouteur global (si la session change) ===
-supabase.auth.onAuthStateChange((evt, session)=>{ log('[auth change]', evt, !!session); show(); });
-
-// === démarrage ===
-await show();
+function downloadCSV(name, rows){
+  const blob=new Blob([toCSV(rows)],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(name.endsWith('.csv')?name:name+'.csv'); a.click(); URL.revokeObjectURL(a.href);
+}
+$('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
+$('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
+$('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>!r.statut || ['Neutre','Non contacté'].includes(r.statut)));
+$('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
+$('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
+$('btnReload').onclick = loadContacts;
 </script>
 </body>
 </html>
-
 
 
