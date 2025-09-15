@@ -27,33 +27,16 @@
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
 
-  <!-- SDK UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
-    // Ton projet
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
 
-    // Libellés UI -> valeur texte stockée en base (dans contacts.status)
-    const STATUS_TO_DB = {
-      'Favorable':'favorable',
-      'Défavorable':'defavorable',
-      'Indécis':'indecis',
-      'Absent':'absent',
-      'Non contacté':'non_contacte'
-    };
-    // Valeur DB -> libellé affiché
-    const DB_TO_LABEL = {
-      'favorable':'Favorable',
-      'defavorable':'Défavorable',
-      'indecis':'Indécis',
-      'absent':'Absent',
-      'non_contacte':'Non contacté',
-      null:'Non contacté', undefined:'Non contacté'
-    };
+    // UI <-> DB (text)
+    const STATUS_TO_DB = {'Favorable':'favorable','Défavorable':'defavorable','Indécis':'indecis','Absent':'absent','Non contacté':'non_contacte'};
+    const DB_TO_LABEL  = {'favorable':'Favorable','defavorable':'Défavorable','indecis':'Indécis','absent':'Absent','non_contacte':'Non contacté'};
   </script>
 </head>
 <body>
@@ -64,11 +47,19 @@
   <!-- AUTH -->
   <div id="authCard" class="card">
     <div class="row" style="gap:10px;align-items:flex-end">
-      <div><div class="muted">Email</div><input id="email" class="input" placeholder="benevole@asso.fr" /></div>
-      <div><div class="muted">Mot de passe</div><input id="password" type="password" class="input" placeholder="••••••••" /></div>
+      <div>
+        <div class="muted">Email</div>
+        <input id="email" class="input" placeholder="benevole@asso.fr" autocomplete="email" />
+      </div>
+      <div>
+        <div class="muted">Mot de passe</div>
+        <input id="password" type="password" class="input" placeholder="••••••••" autocomplete="current-password" />
+      </div>
       <button id="btnSignIn" class="btn primary">Se connecter</button>
+      <button id="btnForgot" class="btn">Mot de passe oublié</button>
     </div>
-    <div id="authError" class="muted" style="color:#b91c1c;margin-top:6px"></div>
+    <div id="authMsg" class="muted" style="margin-top:6px"></div>
+    <div id="authErrorBox" style="display:none;background:#fee;border:1px solid #f99;color:#600;padding:8px;margin-top:8px;border-radius:8px"></div>
   </div>
 
   <!-- APP -->
@@ -82,9 +73,7 @@
           <option>Favorable</option><option>Défavorable</option>
           <option>Indécis</option><option>Absent</option><option>Non contacté</option>
         </select>
-        <select id="fBureau" class="input">
-          <option value="">Tous les bureaux de vote</option>
-        </select>
+        <select id="fBureau" class="input"><option value="">Tous les bureaux de vote</option></select>
         <button id="btnReload" class="btn">Recharger</button>
         <button id="btnSignOut" class="btn">Se déconnecter</button>
       </div>
@@ -101,15 +90,9 @@
       <table>
         <thead>
           <tr>
-            <th>Nom</th>
-            <th>Adresse</th>
-            <th>Secteur</th>
-            <th>Bureau de vote</th>
-            <th>Téléphone</th>
-            <th>Email</th>
-            <th>Statut</th>
-            <th>Remarque</th>
-            <th>Actions</th>
+            <th>Nom</th><th>Adresse</th><th>Secteur</th><th>Bureau de vote</th>
+            <th>Téléphone</th><th>Email</th>
+            <th>Statut</th><th>Remarque</th><th>Actions</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -125,25 +108,45 @@
   const $  = id => document.getElementById(id);
   const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-
   const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''}, bureaux:[] };
 
-  // Helpers colonnes variables
+  // --- panneau erreurs fatal (diagnostic)
+  const showFatal = (msg, detail) => {
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fee;border:1px solid #f99;color:#600;padding:10px;margin:10px;border-radius:8px';
+    box.innerHTML = `<b>Erreur :</b> ${EH(msg)}<pre style="white-space:pre-wrap">${detail?EH(JSON.stringify(detail,null,2)):''}</pre>`;
+    document.body.prepend(box);
+    console.error('[fatal]', msg, detail);
+  };
+
+  // --- AUTH UI helpers
+  const showAuthError = (msg, detail) => {
+    $('authErrorBox').style.display = 'block';
+    $('authErrorBox').innerHTML =
+      `<b>Erreur de connexion :</b> ${EH(msg)}<pre style="white-space:pre-wrap;margin:6px 0 0 0">${detail ? EH(JSON.stringify(detail,null,2)) : ''}</pre>`;
+    console.error('[login error]', msg, detail);
+  };
+  const clearAuthError = () => { $('authErrorBox').style.display = 'none'; $('authErrorBox').innerHTML = ''; };
+
+  // --- helpers colonnes variables
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
   function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
-    const cp  = pick(obj, ['code postal','code_postal','cp']);
-    const com = pick(obj, ['commune','ville']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero','NUMERO']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie','RUE']);
+    const cp  = pick(obj, ['code postal','code_postal','cp','CP']);
+    const com = pick(obj, ['commune','ville','VILLE']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse','ADRESSE']);
   }
   function buildNom(obj){
-    const first = pick(obj, ['prénoms','prénom','prenom','first_name']);
-    const lastUsage = pick(obj, ['nom d’usage',"nom d'usage",'nom_usage']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
-    const last = lastUsage || lastBirth || pick(obj,['nom','last_name']);
-    return [first,last].filter(Boolean).join(' ').trim();
+    const first = pick(obj, ['prénom','prenom','prénoms','prenoms','first_name','first','PRENOM','PRENOMS']);
+    const lastUsage = pick(obj, ['nom d’usage','nom d\'usage','nom_usage','nom usage','Nom d’usage','Nom d\'usage','NOM_USAGE']);
+    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance','Nom de naissance','NOM NAISSANCE']);
+    const lastPlain = pick(obj, ['nom','Nom','NOM','last_name','last']);
+    const last = lastUsage || lastBirth || lastPlain;
+    const full = [first,last].filter(Boolean).join(' ').trim();
+    return full || pick(obj,['nom_complet','name','display_name']) || last || first;
   }
+
   function pill(label){
     if(label==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(label==='Défavorable')return'<span class="pill def">Défavorable</span>';
@@ -153,11 +156,26 @@
   }
   function rowCls(label){ return label==='Favorable'?'row-fav':label==='Défavorable'?'row-def':(label==='Indécis'||label==='Non contacté')?'row-ind':''; }
 
+  // ---- 15k contacts par pagination .range
+  async function fetchAllContacts(){
+    const pageSize = 1000;
+    let from = 0, chunk = [], all=[];
+    do{
+      const to = from + pageSize - 1;
+      const { data, error } = await sb.from('contacts').select('*').range(from,to);
+      if (error){ throw error; }
+      chunk = data || [];
+      all = all.concat(chunk);
+      from += pageSize;
+    } while (chunk.length === pageSize);
+    return all;
+  }
+
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
-      const okB=!state.filters.bureau || (r.bureau || '').toLowerCase()===state.filters.bureau.toLowerCase();
+      const okB=!state.filters.bureau || (r.bureau || '')===state.filters.bureau;
       const okQ=!q || [r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.remarque]
         .some(v=> String(v||'').toLowerCase().includes(q));
       return okS && okB && okQ;
@@ -193,49 +211,38 @@
       </tr>`).join('');
     updateStats();
   }
-
   function fillBureauxDropdown(){
     const sel=$('fBureau');
     sel.innerHTML = '<option value="">Tous les bureaux de vote</option>' +
       state.bureaux.map(v=>`<option>${EH(v)}</option>`).join('');
   }
 
-  // ---- 15k contacts par pagination .range
-  async function fetchAllContacts(){
-    const pageSize = 1000;
-    let from = 0, chunk = [], all=[];
-    do{
-      const to = from + pageSize - 1;
-      const { data, error } = await sb.from('contacts').select('*').range(from,to);
-      if (error){ throw error; }
-      chunk = data || [];
-      all = all.concat(chunk);
-      from += pageSize;
-    } while (chunk.length === pageSize);
-    return all;
-  }
-
   async function loadContacts(){
-    const all = await fetchAllContacts();
-    state.rows = all.map(c=>{
-      const nom = buildNom(c);
-      const adresse = buildAdresse(c);
-      const secteur = pick(c, ['sector','secteur']);
-      const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau','libellé du bureau de vote']);
-      const telephone = pick(c, ['phone','téléphone','telephone']);
-      const email = pick(c,['email','courriel']);
-      const label = DB_TO_LABEL[c.status] || 'Non contacté';
-      return { id:c.id, nom, adresse, secteur, bureau, telephone, email, statut:label, remarque:'' };
-    });
-    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
-    state.bureaux = Array.from(new Set(state.rows.map(r=>r.bureau).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'fr'));
-    fillBureauxDropdown();
-    log('[contacts loaded]', state.rows.length);
-    render();
+    try{
+      const all = await fetchAllContacts();
+      state.rows = all.map(c=>{
+        const nom = buildNom(c);
+        const adresse = buildAdresse(c);
+        const secteur = pick(c, ['sector','secteur']);
+        const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau','bureau','Bureau de vote']);
+        const telephone = pick(c, ['phone','téléphone','telephone']);
+        const email = pick(c,['email','courriel']);
+        const label = DB_TO_LABEL[c.status] || 'Non contacté';
+        return { id:c.id, nom, adresse, secteur, bureau, telephone, email, statut:label, remarque:'' };
+      });
+      state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+      state.bureaux = Array.from(new Set(state.rows.map(r=>r.bureau).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'fr'));
+      fillBureauxDropdown();
+      log('[contacts loaded]', state.rows.length);
+      render();
+    }catch(err){
+      showFatal('Chargement contacts impossible (RLS/permissions ?)', err);
+    }
   }
 
   async function boot(){
-    const { data:{ session } } = await sb.auth.getSession();
+    const { data:{ session }, error } = await sb.auth.getSession();
+    if (error){ showFatal('auth.getSession a échoué', error); return; }
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -247,29 +254,38 @@
     }
   }
 
-  // ---- events
+  // --- AUTH handlers
   $('btnSignIn').onclick = async ()=>{
-    $('authError').textContent='';
+    clearAuthError();
+    $('authMsg').textContent = 'Connexion en cours…';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
-    if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
+    if(!email || !password){ $('authMsg').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; return; }
+    if (error){ $('authMsg').textContent=''; showAuthError(error.message||'Échec de la connexion', error); return; }
+    $('authMsg').textContent='Connecté, chargement…';
     await boot();
+  };
+  $('btnForgot').onclick = async ()=>{
+    clearAuthError();
+    const email=$('email').value.trim().toLowerCase();
+    if(!email){ showAuthError('Saisis ton email pour recevoir le lien de réinitialisation.'); return; }
+    const { error } = await sb.auth.resetPasswordForEmail(email, {
+      redirectTo: 'https://younes557-a.github.io/porte---porte/reset_password.html'
+    });
+    if (error){ showAuthError('Envoi du mail impossible', error); return; }
+    $('authMsg').textContent = 'Email envoyé. Clique le lien “Reset password”.';
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
 
-  // 🔧 BOUTONS STATUT : MAJ contacts.status (texte). PAS de table visits.
+  // Boutons statut -> MAJ contacts.status (texte)
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
     const id=b.dataset.id, uiLabel=b.dataset.val;
-    const dbValue = STATUS_TO_DB[uiLabel];
-    if (!dbValue){ alert('Statut inconnu'); return; }
-
+    const dbValue = STATUS_TO_DB[uiLabel]; if(!dbValue){ alert('Statut inconnu'); return; }
     const { error } = await sb.from('contacts').update({ status: dbValue }).eq('id', id);
-    if (error){ alert(error.message); log('[update status ERROR]', error); return; }
-
-    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = DB_TO_LABEL[dbValue]; render(); }
+    if (error){ alert(error.message); return; }
+    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = uiLabel; render(); }
   });
 
   // édition champs
@@ -277,17 +293,16 @@
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
     const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val; if(field==='remarque') patch.remark=val;
-    if (Object.keys(patch).length){
-      try{ await sb.from('contacts').update(patch).eq('id', id); }catch{}
-    }
+    if (Object.keys(patch).length){ await sb.from('contacts').update(patch).eq('id', id); }
   });
 
-  $('q').oninput   = e=>{ state.filters.q=e.target.value; render(); };
+  // filtres & reload
+  $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
-  // Exports
+  // CSV
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Secteur','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
@@ -301,10 +316,12 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
+  // Boot
   sb.auth.onAuthStateChange(()=>boot());
   boot();
 })();
 </script>
 </body>
 </html>
+
 
