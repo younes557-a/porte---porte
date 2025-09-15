@@ -1,326 +1,157 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Porte-à-porte — Supabase</title>
   <style>
-    :root{--bg:#fff;--fg:#111;--muted:#555;--pri:#2563eb;--bd:#111}
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:#fff;color:#111;margin:0}
-    .wrap{max-width:1200px;margin:0 auto;padding:16px}
-    h1{margin:0 0 6px 0;font-size:clamp(20px,2.6vw,28px)}
-    .muted{color:#555;font-size:13px}
-    .card{background:#fff;border-radius:14px;box-shadow:0 10px 24px -12px rgba(0,0,0,.18);padding:14px;margin-top:10px;border:1.5px solid #111}
-    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .btn{border:1.5px solid #111;background:#fff;color:#111;border-radius:12px;padding:8px 12px;font-weight:600;cursor:pointer}
-    .btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}
-    .input, select, textarea{border:1.5px solid #111;border-radius:10px;padding:8px 10px;background:#fff;color:#111}
-    table{border-collapse:collapse;width:100%;font-size:14px}
-    thead th{position:sticky;top:0;background:#fff;border-bottom:1px solid #e5e7eb;text-align:left;padding:8px}
-    tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
-    .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
-    .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
-    .pill.ind{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
-    .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
-    .hidden{display:none}
-    .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; }
+    .wrap { max-width: 920px; margin: 40px auto; padding: 0 16px; }
+    h1 { font-size: 28px; margin-bottom: 16px; }
+    .card { border:2px solid #111; border-radius:10px; padding:18px; }
+    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    .field { display:flex; flex-direction:column; gap:6px; min-width:260px; flex:1; }
+    label { font-weight:600; font-size:14px; }
+    input[type="email"], input[type="password"] {
+      border:1px solid #bdbdbd; border-radius:8px; padding:10px 12px; font-size:15px; width:100%;
+    }
+    button { border:0; border-radius:999px; padding:10px 16px; font-weight:700; cursor:pointer; }
+    .btn-primary { background:#2563eb; color:#fff; }
+    .btn-secondary { background:#e5e7eb; color:#111; }
+    .status { margin-top:10px; font-size:14px; min-height:20px; }
+    .status.error { color:#b91c1c; }
+    .status.ok { color:#065f46; }
+    .muted { color:#6b7280; font-size:13px; }
   </style>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script>
-    const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
-    const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-    const { createClient } = window.supabase;
-    window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
-
-    // UI <-> DB (text)
-    const STATUS_TO_DB = {'Favorable':'favorable','Défavorable':'defavorable','Indécis':'indecis','Absent':'absent','Non contacté':'non_contacte'};
-    const DB_TO_LABEL  = {'favorable':'Favorable','defavorable':'Défavorable','indecis':'Indécis','absent':'Absent','non_contacte':'Non contacté'};
-  </script>
 </head>
 <body>
-<div class="wrap">
-  <h1>Porte-à-porte — Supabase</h1>
-  <div class="muted">Connexion requise. Accès complet à la base.</div>
+  <div class="wrap">
+    <h1>Porte-à-porte — Supabase</h1>
+    <p class="muted">Connexion requise. Accès complet à la base.</p>
 
-  <!-- AUTH -->
-  <div id="authCard" class="card">
-    <div class="row" style="gap:10px;align-items:flex-end">
-      <div>
-        <div class="muted">Email</div>
-        <input id="email" class="input" placeholder="benevole@asso.fr" autocomplete="email" />
-      </div>
-      <div>
-        <div class="muted">Mot de passe</div>
-        <input id="password" type="password" class="input" placeholder="••••••••" autocomplete="current-password" />
-      </div>
-      <button id="btnSignIn" class="btn primary">Se connecter</button>
-      <button id="btnForgot" class="btn">Mot de passe oublié</button>
+    <div class="card">
+      <form id="login-form" class="row" autocomplete="on">
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required />
+        </div>
+        <div class="field">
+          <label for="password">Mot de passe</label>
+          <input id="password" name="current-password" type="password" autocomplete="current-password" required />
+        </div>
+        <div class="row">
+          <button id="login-btn" class="btn-primary" type="submit">Se connecter</button>
+          <button id="forgot-btn" class="btn-secondary" type="button">Mot de passe oublié</button>
+        </div>
+        <div id="status" class="status" aria-live="polite"></div>
+      </form>
     </div>
-    <div id="authMsg" class="muted" style="margin-top:6px"></div>
-    <div id="authErrorBox" style="display:none;background:#fee;border:1px solid #f99;color:#600;padding:8px;margin-top:8px;border-radius:8px"></div>
   </div>
 
-  <!-- APP -->
-  <div id="appCard" class="card hidden">
-    <div class="row" style="justify-content:space-between;align-items:center">
-      <div class="muted">Connecté : <b id="who"></b></div>
-      <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:280px" />
-        <select id="fStatus" class="input">
-          <option value="">Tous les statuts</option>
-          <option>Favorable</option><option>Défavorable</option>
-          <option>Indécis</option><option>Absent</option><option>Non contacté</option>
-        </select>
-        <select id="fBureau" class="input"><option value="">Tous les bureaux de vote</option></select>
-        <button id="btnReload" class="btn">Recharger</button>
-        <button id="btnSignOut" class="btn">Se déconnecter</button>
-      </div>
-    </div>
+  <!-- Supabase JS v2 -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <script>
+    // 1) REMPLACE ces 2 constantes par les valeurs de TON projet
+    const SUPABASE_URL = "https://XXXXXXXXXXXX.supabase.co";          // ← Project URL
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // ← anon key (PAS la service_role)
 
-    <div class="row" style="gap:8px;margin-top:8px">
-      <button id="btnCSVAll" class="btn">Exporter CSV (tout)</button>
-      <button id="btnCSVFav" class="btn">CSV Favorables</button>
-      <button id="btnCSVIndecis" class="btn">CSV Indécis</button>
-      <span class="muted" id="stats"></span>
-    </div>
+    // 2) Calcul automatique de l'URL de redirection pour le reset (doit être autorisée dans Supabase)
+    const basePath = (() => {
+      const url = new URL(location.href);
+      // Ex: https://younes557-a.github.io/porte---porte/index.html  -> garde /porte---porte/
+      const parts = url.pathname.split("/");
+      if (parts[parts.length - 1].match(/^index\.html?$/i)) parts.pop();
+      if (parts[parts.length - 1] !== "") parts.push("");
+      return url.origin + parts.join("/");
+    })();
+    const RESET_REDIRECT_URL = basePath + "reset_password.html";
 
-    <div style="max-height:60vh;overflow:auto;margin-top:10px">
-      <table>
-        <thead>
-          <tr>
-            <th>Nom</th><th>Adresse</th><th>Secteur</th><th>Bureau de vote</th>
-            <th>Téléphone</th><th>Email</th>
-            <th>Statut</th><th>Remarque</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
-    </div>
+    // 3) Client Supabase
+    const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    <details style="margin-top:10px"><summary>Logs</summary><pre class="logs" id="log"></pre></details>
-  </div>
-</div>
+    // Helpers UI
+    const form   = document.getElementById("login-form");
+    const btn    = document.getElementById("login-btn");
+    const forgot = document.getElementById("forgot-btn");
+    const status = document.getElementById("status");
 
-<script>
-(function(){
-  const $  = id => document.getElementById(id);
-  const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
-  const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''}, bureaux:[] };
+    function setStatus(msg, kind = "") {
+      status.className = "status " + kind;
+      status.textContent = msg || "";
+    }
+    function setLoading(isLoading, msg = "") {
+      btn.disabled = isLoading;
+      forgot.disabled = isLoading;
+      setStatus(msg);
+    }
 
-  // --- panneau erreurs fatal (diagnostic)
-  const showFatal = (msg, detail) => {
-    const box = document.createElement('div');
-    box.style.cssText = 'background:#fee;border:1px solid #f99;color:#600;padding:10px;margin:10px;border-radius:8px';
-    box.innerHTML = `<b>Erreur :</b> ${EH(msg)}<pre style="white-space:pre-wrap">${detail?EH(JSON.stringify(detail,null,2)):''}</pre>`;
-    document.body.prepend(box);
-    console.error('[fatal]', msg, detail);
-  };
+    // 4) Si l'utilisateur a déjà une session, on peut rediriger directement
+    (async () => {
+      const { data: { session } } = await supa.auth.getSession();
+      if (session) {
+        setStatus("Déjà connecté ✅, redirection…", "ok");
+        location.href = "reset_password.html"; // change la cible si besoin
+      }
+    })();
 
-  // --- AUTH UI helpers
-  const showAuthError = (msg, detail) => {
-    $('authErrorBox').style.display = 'block';
-    $('authErrorBox').innerHTML =
-      `<b>Erreur de connexion :</b> ${EH(msg)}<pre style="white-space:pre-wrap;margin:6px 0 0 0">${detail ? EH(JSON.stringify(detail,null,2)) : ''}</pre>`;
-    console.error('[login error]', msg, detail);
-  };
-  const clearAuthError = () => { $('authErrorBox').style.display = 'none'; $('authErrorBox').innerHTML = ''; };
+    // 5) Connexion email/password
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
 
-  // --- helpers colonnes variables
-  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
-  function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero','NUMERO']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie','RUE']);
-    const cp  = pick(obj, ['code postal','code_postal','cp','CP']);
-    const com = pick(obj, ['commune','ville','VILLE']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse','ADRESSE']);
-  }
-  function buildNom(obj){
-    const first = pick(obj, ['prénom','prenom','prénoms','prenoms','first_name','first','PRENOM','PRENOMS']);
-    const lastUsage = pick(obj, ['nom d’usage','nom d\'usage','nom_usage','nom usage','Nom d’usage','Nom d\'usage','NOM_USAGE']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance','Nom de naissance','NOM NAISSANCE']);
-    const lastPlain = pick(obj, ['nom','Nom','NOM','last_name','last']);
-    const last = lastUsage || lastBirth || lastPlain;
-    const full = [first,last].filter(Boolean).join(' ').trim();
-    return full || pick(obj,['nom_complet','name','display_name']) || last || first;
-  }
+      if (!email || !password) {
+        setStatus("Veuillez saisir l'email et le mot de passe.", "error");
+        return;
+      }
 
-  function pill(label){
-    if(label==='Favorable')return'<span class="pill fav">Favorable</span>';
-    if(label==='Défavorable')return'<span class="pill def">Défavorable</span>';
-    if(label==='Indécis')return'<span class="pill ind">Indécis</span>';
-    if(label==='Absent')return'<span class="pill abs">Absent</span>';
-    return'<span class="pill nc">Non contacté</span>';
-  }
-  function rowCls(label){ return label==='Favorable'?'row-fav':label==='Défavorable'?'row-def':(label==='Indécis'||label==='Non contacté')?'row-ind':''; }
+      setLoading(true, "Connexion en cours…");
 
-  // ---- 15k contacts par pagination .range
-  async function fetchAllContacts(){
-    const pageSize = 1000;
-    let from = 0, chunk = [], all=[];
-    do{
-      const to = from + pageSize - 1;
-      const { data, error } = await sb.from('contacts').select('*').range(from,to);
-      if (error){ throw error; }
-      chunk = data || [];
-      all = all.concat(chunk);
-      from += pageSize;
-    } while (chunk.length === pageSize);
-    return all;
-  }
+      const { data, error } = await supa.auth.signInWithPassword({ email, password });
 
-  function filtered(){
-    const q=(state.filters.q||'').toLowerCase();
-    return state.rows.filter(r=>{
-      const okS=!state.filters.status || r.statut===state.filters.status;
-      const okB=!state.filters.bureau || (r.bureau || '')===state.filters.bureau;
-      const okQ=!q || [r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.remarque]
-        .some(v=> String(v||'').toLowerCase().includes(q));
-      return okS && okB && okQ;
+      if (error) {
+        // Messages lisibles fréquents
+        if (/email not confirmed/i.test(error.message)) {
+          setStatus("Email non confirmé. Confirme l'email dans Supabase ou désactive la confirmation.", "error");
+        } else if (/invalid login credentials/i.test(error.message)) {
+          setStatus("Identifiants invalides. Vérifie l'email et le mot de passe.", "error");
+        } else {
+          setStatus("Erreur : " + error.message, "error");
+        }
+        console.error("[login error]", error);
+        setLoading(false);
+        return;
+      }
+
+      setStatus("Connecté ✅, redirection…", "ok");
+      location.href = "reset_password.html"; // change la cible si besoin
     });
-  }
-  function updateStats(){
-    const fav = state.rows.filter(r=>r.statut==='Favorable').length;
-    const def = state.rows.filter(r=>r.statut==='Défavorable').length;
-    const ind = state.rows.filter(r=>r.statut==='Indécis').length;
-    const abs = state.rows.filter(r=>r.statut==='Absent').length;
-    const nc  = state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
-    $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Indécis: ${ind} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
-  }
-  function render(){
-    const rows=filtered();
-    $('tbody').innerHTML=rows.map(r=>`
-      <tr class="${rowCls(r.statut)}">
-        <td>${EH(r.nom)}</td>
-        <td>${EH(r.adresse)}</td>
-        <td>${EH(r.secteur||'')}</td>
-        <td>${EH(r.bureau||'')}</td>
-        <td><input class="input" data-id="${r.id}" data-field="telephone" value="${EH(r.telephone||'')}" /></td>
-        <td><input class="input" data-id="${r.id}" data-field="email" value="${EH(r.email||'')}" /></td>
-        <td>${pill(r.statut)}</td>
-        <td><textarea class="input" data-id="${r.id}" data-field="remarque">${EH(r.remarque||'')}</textarea></td>
-        <td>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Favorable">Favorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Défavorable">Défavorable</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Indécis">Indécis</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Absent">Absent</button>
-          <button class="btn" data-act="set" data-id="${r.id}" data-val="Non contacté">Non contacté</button>
-        </td>
-      </tr>`).join('');
-    updateStats();
-  }
-  function fillBureauxDropdown(){
-    const sel=$('fBureau');
-    sel.innerHTML = '<option value="">Tous les bureaux de vote</option>' +
-      state.bureaux.map(v=>`<option>${EH(v)}</option>`).join('');
-  }
 
-  async function loadContacts(){
-    try{
-      const all = await fetchAllContacts();
-      state.rows = all.map(c=>{
-        const nom = buildNom(c);
-        const adresse = buildAdresse(c);
-        const secteur = pick(c, ['sector','secteur']);
-        const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau','bureau','Bureau de vote']);
-        const telephone = pick(c, ['phone','téléphone','telephone']);
-        const email = pick(c,['email','courriel']);
-        const label = DB_TO_LABEL[c.status] || 'Non contacté';
-        return { id:c.id, nom, adresse, secteur, bureau, telephone, email, statut:label, remarque:'' };
+    // 6) Mot de passe oublié
+    forgot.addEventListener("click", async () => {
+      const email = document.getElementById("email").value.trim();
+      if (!email) {
+        setStatus("Entre ton email dans le champ pour recevoir le lien de réinitialisation.", "error");
+        return;
+      }
+      setLoading(true, "Envoi du lien de réinitialisation…");
+      const { data, error } = await supa.auth.resetPasswordForEmail(email, {
+        redirectTo: RESET_REDIRECT_URL
       });
-      state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
-      state.bureaux = Array.from(new Set(state.rows.map(r=>r.bureau).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'fr'));
-      fillBureauxDropdown();
-      log('[contacts loaded]', state.rows.length);
-      render();
-    }catch(err){
-      showFatal('Chargement contacts impossible (RLS/permissions ?)', err);
-    }
-  }
-
-  async function boot(){
-    const { data:{ session }, error } = await sb.auth.getSession();
-    if (error){ showFatal('auth.getSession a échoué', error); return; }
-    if (session?.user){
-      $('who').textContent = session.user.email || session.user.id;
-      $('authCard').classList.add('hidden');
-      $('appCard').classList.remove('hidden');
-      await loadContacts();
-    } else {
-      $('appCard').classList.add('hidden');
-      $('authCard').classList.remove('hidden');
-    }
-  }
-
-  // --- AUTH handlers
-  $('btnSignIn').onclick = async ()=>{
-    clearAuthError();
-    $('authMsg').textContent = 'Connexion en cours…';
-    const email=$('email').value.trim().toLowerCase();
-    const password=$('password').value.trim();
-    if(!email || !password){ $('authMsg').textContent='Saisis email et mot de passe.'; return; }
-    const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authMsg').textContent=''; showAuthError(error.message||'Échec de la connexion', error); return; }
-    $('authMsg').textContent='Connecté, chargement…';
-    await boot();
-  };
-  $('btnForgot').onclick = async ()=>{
-    clearAuthError();
-    const email=$('email').value.trim().toLowerCase();
-    if(!email){ showAuthError('Saisis ton email pour recevoir le lien de réinitialisation.'); return; }
-    const { error } = await sb.auth.resetPasswordForEmail(email, {
-      redirectTo: 'https://younes557-a.github.io/porte---porte/reset_password.html'
+      if (error) {
+        if (/not allowed/i.test(error.message) || /redirect/i.test(error.message)) {
+          setStatus("URL de redirection non autorisée. Ajoute : " + RESET_REDIRECT_URL + " dans Supabase → Authentication → URL Configuration.", "error");
+        } else {
+          setStatus("Erreur : " + error.message, "error");
+        }
+        console.error("[reset error]", error);
+        setLoading(false);
+        return;
+      }
+      setStatus("Email envoyé ✅. Vérifie ta boîte mail.", "ok");
+      setLoading(false);
     });
-    if (error){ showAuthError('Envoi du mail impossible', error); return; }
-    $('authMsg').textContent = 'Email envoyé. Clique le lien “Reset password”.';
-  };
-  $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
-
-  // Boutons statut -> MAJ contacts.status (texte)
-  document.addEventListener('click', async (e)=>{
-    const b = e.target.closest('button[data-act="set"]'); if(!b) return;
-    const id=b.dataset.id, uiLabel=b.dataset.val;
-    const dbValue = STATUS_TO_DB[uiLabel]; if(!dbValue){ alert('Statut inconnu'); return; }
-    const { error } = await sb.from('contacts').update({ status: dbValue }).eq('id', id);
-    if (error){ alert(error.message); return; }
-    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = uiLabel; render(); }
-  });
-
-  // édition champs
-  document.addEventListener('input', async (e)=>{
-    const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
-    const id=el.dataset.id, field=el.dataset.field, val=el.value;
-    const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val; if(field==='remarque') patch.remark=val;
-    if (Object.keys(patch).length){ await sb.from('contacts').update(patch).eq('id', id); }
-  });
-
-  // filtres & reload
-  $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
-  $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
-  $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
-  $('btnReload').onclick = loadContacts;
-
-  // CSV
-  const toCSV = rows=>{
-    const cols=['Nom','Adresse','Secteur','Bureau de vote','Téléphone','Email','Statut','Remarque'];
-    const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
-    return cols.join(';')+'\n'+rows.map(r=>[r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.statut||'',r.remarque||''].map(esc).join(';')).join('\n');
-  };
-  function downloadCSV(name, rows){
-    const blob=new Blob([toCSV(rows)],{type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=(name.endsWith('.csv')?name:name+'.csv'); a.click(); URL.revokeObjectURL(a.href);
-  }
-  $('btnCSVAll').onclick     = ()=> downloadCSV('liste_complete', state.rows);
-  $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
-  $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
-
-  // Boot
-  sb.auth.onAuthStateChange(()=>boot());
-  boot();
-})();
-</script>
+  </script>
 </body>
 </html>
 
