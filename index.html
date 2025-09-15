@@ -27,7 +27,7 @@
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
 
-  <!-- SDK Supabase (UMD global) -->
+  <!-- Supabase SDK (UMD global) -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
@@ -62,9 +62,8 @@
           <option>Favorable</option><option>Défavorable</option>
           <option>Indécis</option><option>Absent</option><option>Non contacté</option>
         </select>
-        <select id="fBureau" class="input">
-          <option value="">Tous les bureaux de vote</option>
-        </select>
+        <select id="fSecteur" class="input"><option value="">Tous les secteurs</option></select>
+        <select id="fBureau" class="input"><option value="">Tous les bureaux de vote</option></select>
         <button id="btnReload" class="btn">Recharger</button>
         <button id="btnSignOut" class="btn">Se déconnecter</button>
       </div>
@@ -99,32 +98,47 @@
   const $ = id => document.getElementById(id);
   const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''} };
+  const state = { rows:[], indexById:{}, filters:{q:'',status:'',secteur:'',bureau:''} };
 
-  // === Mapping statuts UI <-> ENUM base ===
-  const toEnum = {
-    'Favorable':'favorable',
-    'Défavorable':'defavorable',
-    'Indécis':'neutre',
-    'Absent':'absent',
-    'Non contacté':'non_contacte'
-  };
-  const fromEnum = {
-    'favorable':'Favorable',
-    'defavorable':'Défavorable',
-    'neutre':'Indécis',
-    'absent':'Absent',
-    'non_contacte':'Non contacté',
-    // tolérance si déjà texte en clair
-    'Favorable':'Favorable',
-    'Défavorable':'Défavorable',
-    'Indécis':'Indécis',
-    'Neutre':'Indécis',
-    'Absent':'Absent',
-    'Non contacté':'Non contacté'
-  };
+  // UI -> ENUM et inverse
+  const toEnum = {'Favorable':'favorable','Défavorable':'defavorable','Indécis':'neutre','Absent':'absent','Non contacté':'non_contacte'};
+  const fromEnum = {'favorable':'Favorable','defavorable':'Défavorable','neutre':'Indécis','absent':'Absent','non_contacte':'Non contacté'};
 
-  // --- rendu statuts / couleurs
+  // Normalisation des clés: enlève accents/majuscules/espaces
+  const norm = k => String(k||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,'_');
+
+  // Accès tolérant: on construit une map clés_normalisées -> valeur
+  function nmap(obj){
+    const m={}; for(const k in obj){ m[norm(k)] = obj[k]; } return m;
+  }
+  function pickN(m, aliases){ for(const a of aliases){ if(m[a]!=null && m[a]!=='') return m[a]; } return ''; }
+
+  function buildAdresseMap(m){
+    const num = pickN(m, ['numero_de_voie','numero_dans_la_voie','numero','num']);
+    const lib = pickN(m, ['libelle_de_voie','libelle_de_la_voie','rue','voie']);
+    const cp  = pickN(m, ['code_postal','cp']);
+    const com = pickN(m, ['commune','ville']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pickN(m, ['adresse','address']);
+  }
+  function buildNomMap(m){
+    const first = pickN(m, ['prenom','prenoms','first_name','first']);
+    const lastUsage = pickN(m, ['nom_d_usage','nom_usage','nom_dusage']);
+    const lastBirth = pickN(m, ['nom_de_naissance','nom_naissance']);
+    const lastPlain = pickN(m, ['nom','last_name','last']);
+    const last = lastUsage || lastBirth || lastPlain;
+    const full = [first,last].filter(Boolean).join(' ').trim();
+    return full || pickN(m, ['nom_complet','name','display_name']) || last || first;
+  }
+  function buildSecteurMap(m){ return pickN(m, ['secteur','sector']); }
+  function buildBureauMap(m){
+    return pickN(m, [
+      'libelle_du_bureau_de_vote','bureau_de_vote','bureau_vote','bureau',
+      'code_du_bureau_de_vote'
+    ]);
+  }
+
   function pill(st){
     if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
@@ -134,44 +148,15 @@
   }
   function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
 
-  // --- helpers mapping colonnes
-  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
-
-  function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero','NUMERO']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie','RUE']);
-    const cp  = pick(obj, ['code postal','code_postal','cp','CP']);
-    const com = pick(obj, ['commune','ville','VILLE']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse','ADRESSE']);
-  }
-
-  function buildNom(obj){
-    const first = pick(obj, ['prénom','prenom','prénoms','prenoms','first_name','first','PRENOM','PRENOMS']);
-    const lastUsage = pick(obj, ['nom d’usage','nom d\'usage','nom_usage','nom usage','Nom d’usage','Nom d\'usage','NOM_USAGE','NOM USAGE','NOM D’USAGE','NOM D\'USAGE']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance','Nom de naissance','NOM NAISSANCE','NOM_DE_NAISSANCE']);
-    const lastPlain = pick(obj, ['nom','Nom','NOM','last_name','last']);
-    const last = lastUsage || lastBirth || lastPlain;
-    return [first,last].filter(Boolean).join(' ') || pick(obj,['name','display_name','NOM COMPLET','Nom complet']);
-  }
-
-  function buildBureau(obj){
-    return pick(obj, [
-      'libellé du bureau de vote','libelle du bureau de vote','Libellé du bureau de vote',
-      'bureau de vote','Bureau de vote','bureau_vote','bureau','BUREAU',
-      'code du bureau de vote','Code du bureau de vote'
-    ]);
-  }
-  function buildSecteur(obj){ return pick(obj,['secteur','Secteur','sector','SECTEUR']); }
-
-  // --- filtrage & rendu
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
-      const okB=!state.filters.bureau || r.bureau===state.filters.bureau;
+      const okSect=!state.filters.secteur || r.secteur===state.filters.secteur;
+      const okBur=!state.filters.bureau || r.bureau===state.filters.bureau;
       const okQ=!q || [r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.remarque]
         .some(v=> String(v||'').toLowerCase().includes(q));
-      return okS && okB && okQ;
+      return okS && okSect && okBur && okQ;
     });
   }
   function updateStats(){
@@ -204,41 +189,58 @@
       </tr>`).join('');
     updateStats();
   }
-  function populateBureaux(){
-    const uniques = [...new Set(state.rows.map(r => r.bureau).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'));
-    $('fBureau').innerHTML = '<option value="">Tous les bureaux de vote</option>' +
-      uniques.map(b => `<option>${EH(b)}</option>`).join('');
+
+  function populateFilters(){
+    const uniq = (arr)=> [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'));
+    const secteurs = uniq(state.rows.map(r=>r.secteur));
+    const bureaux  = uniq(state.rows.map(r=>r.bureau));
+    $('fSecteur').innerHTML = '<option value="">Tous les secteurs</option>' + secteurs.map(s=>`<option>${EH(s)}</option>`).join('');
+    $('fBureau').innerHTML  = '<option value="">Tous les bureaux de vote</option>' + bureaux.map(s=>`<option>${EH(s)}</option>`).join('');
   }
 
-  // --- chargement
+  // ===== RÉCUPÉRATION TOTALE (pagination 1000) =====
+  async function fetchAllContacts(pageSize=1000){
+    let all = [], from = 0, to = pageSize - 1;
+    for(;;){
+      const { data, error } = await sb.from('contacts').select('*').range(from, to);
+      if (error){ return { data: all, error }; }
+      all = all.concat(data||[]);
+      if (!data || data.length < pageSize) break;
+      from += pageSize; to += pageSize;
+    }
+    return { data: all, error: null };
+  }
+
   async function loadContacts(){
-    const { data, error } = await sb.from('contacts').select('*').limit(20000);
+    const { data, error } = await fetchAllContacts(1000);
     if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
+
     state.rows = (data||[]).map(c=>{
+      const m = nmap(c);
       const statutBrut = c.status ?? c.statut ?? c.status_enum ?? c.visit_status ?? '';
-      const statutUI = fromEnum[String(statutBrut)] || 'Non contacté';
+      const statutUI = fromEnum[String(statutBrut)] || (String(statutBrut).toLowerCase()==='neutre' ? 'Indécis' : (statutBrut || 'Non contacté'));
       return {
         id: c.id,
-        nom: buildNom(c),
-        adresse: buildAdresse(c),
-        secteur: buildSecteur(c),
-        bureau: buildBureau(c),
-        telephone: pick(c, ['phone','téléphone','telephone','PHONE']),
-        email: pick(c, ['email','courriel','EMAIL']),
+        nom: buildNomMap(m),
+        adresse: buildAdresseMap(m),
+        secteur: buildSecteurMap(m),
+        bureau: buildBureauMap(m),
+        telephone: pickN(m, ['phone','telephone','telephone_1']),
+        email: pickN(m, ['email','courriel']),
         statut: statutUI,
         remarque: c.remark || c.remarque || ''
       };
     });
-    state.indexById={}; state.rows.forEach((r)=> state.indexById[r.id]=r);
+
+    state.indexById={}; state.rows.forEach(r => state.indexById[r.id]=r);
     log('[contacts loaded]', state.rows.length);
-    populateBureaux();
+    populateFilters();
     render();
   }
 
-  // --- auth / boot
+  // ===== AUTH / BOOT =====
   async function boot(){
     const { data:{ session } } = await sb.auth.getSession();
-    log('[boot session]', session?.user?.email || null);
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -250,20 +252,20 @@
     }
   }
 
-  // --- events ---
+  // ===== EVENTS =====
   $('btnSignIn').onclick = async ()=>{
     $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
+    if (error){ $('authError').textContent=error.message; return; }
     await boot();
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
-  sb.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt); boot(); });
+  sb.auth.onAuthStateChange(()=> boot());
 
-  // Clic statut -> insert visits (enum) + update contacts (enum si possible, sinon texte)
+  // Clic statut
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
     const id=b.dataset.id, label=b.dataset.val;                 // "Indécis"
@@ -271,27 +273,22 @@
     const { data: u } = await sb.auth.getUser();
     const updated_by = u?.user?.id;
 
-    // 1) Write in visits with enum
+    // 1) insert visits (enum)
     const ins = await sb.from('visits').insert([{ contact_id:id, status: enumValue, remark:'', updated_by }]);
-    if (ins.error){
-      alert(ins.error.message);
-      log('[visits insert ERROR]', ins.error);
-      return;
-    }
+    if (ins.error){ alert(ins.error.message); return; }
 
-    // 2) Try to update contacts.status as enum; if it fails, fallback to label text
+    // 2) update contacts.status (enum) sinon fallback texte
     let up = await sb.from('contacts').update({ status: enumValue }).eq('id', id);
     if (up.error){
-      // fallback text
       up = await sb.from('contacts').update({ status: label }).eq('id', id);
-      if (up.error){ alert(up.error.message); log('[contacts update ERROR]', up.error); return; }
+      // si encore erreur on laisse mais l'info est bien dans visits
     }
 
-    // 3) reflect in UI
+    // 3) UI
     const r=state.indexById[id]; if(r){ r.statut = label; render(); }
   });
 
-  // Edit téléphone/email/remark -> update contacts (champ texte)
+  // Éditions champs simples
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
@@ -301,18 +298,19 @@
     if(field==='remarque') patch.remark=val;
     if (Object.keys(patch).length){
       const { error } = await sb.from('contacts').update(patch).eq('id', id);
-      if (error){ alert(error.message); log('[update contact ERROR]', error); }
+      if (error){ alert(error.message); }
       else { const r=state.indexById[id]; if(r){ r[field]=val; } }
     }
   });
 
-  // Filtres + reload
-  $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
-  $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
-  $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
+  // Filtres & reload
+  $('q').oninput     = e=>{ state.filters.q=e.target.value; render(); };
+  $('fStatus').onchange  = e=>{ state.filters.status=e.target.value; render(); };
+  $('fSecteur').onchange = e=>{ state.filters.secteur=e.target.value; render(); };
+  $('fBureau').onchange  = e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
-  // --- CSV
+  // CSV
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Secteur','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
@@ -326,7 +324,7 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
-  // Go
+  // GO
   boot();
 })();
 </script>
