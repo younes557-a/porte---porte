@@ -9,7 +9,7 @@
     *{box-sizing:border-box}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;background:#fff;color:#111;margin:0}
     .wrap{max-width:1200px;margin:0 auto;padding:16px}
-    h1{margin:0 0 4px 0;font-size:clamp(20px,2.6vw,28px)}
+    h1{margin:0 0 6px 0;font-size:clamp(20px,2.6vw,28px)}
     .muted{color:#555;font-size:13px}
     .card{background:#fff;border-radius:14px;box-shadow:0 10px 24px -12px rgba(0,0,0,.18);padding:14px;margin-top:10px;border:1.5px solid #111}
     .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -21,19 +21,40 @@
     tbody td{border-bottom:1px solid #f0f0f0;padding:8px;vertical-align:top}
     .pill{display:inline-block;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
     .pill.fav{background:#dcfce7;color:#166534}.pill.def{background:#fee2e2;color:#991b1b}
-    .pill.ind{background:#e0e7ff;color:#3730a3}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
-    .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#eef2ff}
+    .pill.ind{background:#fef9c3;color:#854d0e}.pill.abs{background:#e5e7eb;color:#111827}.pill.nc{background:#e5e7eb;color:#1f2937}
+    .row-fav{background:#eaffea}.row-def{background:#ffecec}.row-ind{background:#f3f4f6}
     .hidden{display:none}
     .logs{background:#111;color:#0f0;padding:8px;border-radius:8px;white-space:pre-wrap}
   </style>
 
-  <!-- Supabase SDK (UMD global) -->
+  <!-- SDK UMD -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script>
+    // Ton projet
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
+
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
+
+    // Libellés UI -> valeurs ENUM DB (sans accents/minuscule)
+    const STATUS_TO_DB = {
+      'Favorable':'favorable',
+      'Défavorable':'defavorable',
+      'Indécis':'indecis',       // bouton Indécis
+      'Neutre':'indecis',        // et “Neutre” alimente Indécis (comme demandé)
+      'Absent':'absent',
+      'Non contacté':'non_contacte'
+    };
+    // Valeurs DB -> libellé UI
+    const DB_TO_LABEL = {
+      'favorable':'Favorable',
+      'defavorable':'Défavorable',
+      'indecis':'Indécis',
+      'absent':'Absent',
+      'non_contacte':'Non contacté',
+      null:'Non contacté', undefined:'Non contacté'
+    };
   </script>
 </head>
 <body>
@@ -53,17 +74,18 @@
 
   <!-- APP -->
   <div id="appCard" class="card hidden">
-    <div class="row" style="justify-content:space-between">
+    <div class="row" style="justify-content:space-between;align-items:center">
       <div class="muted">Connecté : <b id="who"></b></div>
       <div class="row">
-        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:260px" />
+        <input id="q" class="input" placeholder="Recherche (nom, adresse, téléphone, email, remarque)..." style="flex:1;min-width:280px" />
         <select id="fStatus" class="input">
           <option value="">Tous les statuts</option>
           <option>Favorable</option><option>Défavorable</option>
           <option>Indécis</option><option>Absent</option><option>Non contacté</option>
         </select>
-        <select id="fSecteur" class="input"><option value="">Tous les secteurs</option></select>
-        <select id="fBureau" class="input"><option value="">Tous les bureaux de vote</option></select>
+        <select id="fBureau" class="input">
+          <option value="">Tous les bureaux de vote</option>
+        </select>
         <button id="btnReload" class="btn">Recharger</button>
         <button id="btnSignOut" class="btn">Se déconnecter</button>
       </div>
@@ -80,9 +102,15 @@
       <table>
         <thead>
           <tr>
-            <th>Nom</th><th>Adresse</th><th>Secteur</th><th>Bureau de vote</th>
-            <th>Téléphone</th><th>Email</th>
-            <th>Statut</th><th>Remarque</th><th>Actions</th>
+            <th>Nom</th>
+            <th>Adresse</th>
+            <th>Secteur</th>
+            <th>Bureau de vote</th>
+            <th>Téléphone</th>
+            <th>Email</th>
+            <th>Statut</th>
+            <th>Remarque</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -95,76 +123,70 @@
 
 <script>
 (function(){
-  const $ = id => document.getElementById(id);
+  const $  = id => document.getElementById(id);
   const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
+
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
-  const state = { rows:[], indexById:{}, filters:{q:'',status:'',secteur:'',bureau:''} };
+  const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''}, bureaux:[] };
 
-  // UI -> ENUM et inverse
-  const toEnum = {'Favorable':'favorable','Défavorable':'defavorable','Indécis':'neutre','Absent':'absent','Non contacté':'non_contacte'};
-  const fromEnum = {'favorable':'Favorable','defavorable':'Défavorable','neutre':'Indécis','absent':'Absent','non_contacte':'Non contacté'};
-
-  // Normalisation des clés: enlève accents/majuscules/espaces
-  const norm = k => String(k||'')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase().replace(/[^a-z0-9]+/g,'_');
-
-  // Accès tolérant: on construit une map clés_normalisées -> valeur
-  function nmap(obj){
-    const m={}; for(const k in obj){ m[norm(k)] = obj[k]; } return m;
+  // helpers colonnes variables
+  function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
+  function buildAdresse(obj){
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
+    const cp  = pick(obj, ['code postal','code_postal','cp']);
+    const com = pick(obj, ['commune','ville']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
   }
-  function pickN(m, aliases){ for(const a of aliases){ if(m[a]!=null && m[a]!=='') return m[a]; } return ''; }
-
-  function buildAdresseMap(m){
-    const num = pickN(m, ['numero_de_voie','numero_dans_la_voie','numero','num']);
-    const lib = pickN(m, ['libelle_de_voie','libelle_de_la_voie','rue','voie']);
-    const cp  = pickN(m, ['code_postal','cp']);
-    const com = pickN(m, ['commune','ville']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pickN(m, ['adresse','address']);
-  }
-  function buildNomMap(m){
-    const first = pickN(m, ['prenom','prenoms','first_name','first']);
-    const lastUsage = pickN(m, ['nom_d_usage','nom_usage','nom_dusage']);
-    const lastBirth = pickN(m, ['nom_de_naissance','nom_naissance']);
-    const lastPlain = pickN(m, ['nom','last_name','last']);
-    const last = lastUsage || lastBirth || lastPlain;
-    const full = [first,last].filter(Boolean).join(' ').trim();
-    return full || pickN(m, ['nom_complet','name','display_name']) || last || first;
-  }
-  function buildSecteurMap(m){ return pickN(m, ['secteur','sector']); }
-  function buildBureauMap(m){
-    return pickN(m, [
-      'libelle_du_bureau_de_vote','bureau_de_vote','bureau_vote','bureau',
-      'code_du_bureau_de_vote'
-    ]);
+  function buildNom(obj){
+    const first = pick(obj, ['prénoms','prénom','prenom','first_name']);
+    const lastUsage = pick(obj, ['nom d’usage',"nom d'usage",'nom_usage','nom_usage']);
+    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
+    const last = lastUsage || lastBirth || pick(obj,['nom','last_name']);
+    return [first,last].filter(Boolean).join(' ').trim();
   }
 
-  function pill(st){
-    if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
-    if(st==='Défavorable')return'<span class="pill def">Défavorable</span>';
-    if(st==='Indécis')return'<span class="pill ind">Indécis</span>';
-    if(st==='Absent')return'<span class="pill abs">Absent</span>';
+  function pill(label){
+    if(label==='Favorable')return'<span class="pill fav">Favorable</span>';
+    if(label==='Défavorable')return'<span class="pill def">Défavorable</span>';
+    if(label==='Indécis')return'<span class="pill ind">Indécis</span>';
+    if(label==='Absent')return'<span class="pill abs">Absent</span>';
     return'<span class="pill nc">Non contacté</span>';
   }
-  function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
+  function rowCls(label){ return label==='Favorable'?'row-fav':label==='Défavorable'?'row-def':(label==='Indécis'||label==='Non contacté')?'row-ind':''; }
 
+  // --------- CHARGEMENT 15k (pagination 1000 par 1000)
+  async function fetchAllContacts(){
+    const pageSize = 1000;
+    let from = 0, chunk = [], all=[];
+    do{
+      const to = from + pageSize - 1;
+      const { data, error } = await sb.from('contacts').select('*').range(from,to);
+      if (error){ throw error; }
+      chunk = data || [];
+      all = all.concat(chunk);
+      from += pageSize;
+    } while (chunk.length === pageSize);
+    return all;
+  }
+
+  // --------- REMPLISSAGE
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
       const okS=!state.filters.status || r.statut===state.filters.status;
-      const okSect=!state.filters.secteur || r.secteur===state.filters.secteur;
-      const okBur=!state.filters.bureau || r.bureau===state.filters.bureau;
+      const okB=!state.filters.bureau || (r.bureau || '').toLowerCase()===state.filters.bureau.toLowerCase();
       const okQ=!q || [r.nom,r.adresse,r.secteur,r.bureau,r.telephone,r.email,r.remarque]
         .some(v=> String(v||'').toLowerCase().includes(q));
-      return okS && okSect && okBur && okQ;
+      return okS && okB && okQ;
     });
   }
   function updateStats(){
-    const fav=state.rows.filter(r=>r.statut==='Favorable').length;
-    const def=state.rows.filter(r=>r.statut==='Défavorable').length;
-    const ind=state.rows.filter(r=>r.statut==='Indécis').length;
-    const abs=state.rows.filter(r=>r.statut==='Absent').length;
-    const nc =state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
+    const fav = state.rows.filter(r=>r.statut==='Favorable').length;
+    const def = state.rows.filter(r=>r.statut==='Défavorable').length;
+    const ind = state.rows.filter(r=>r.statut==='Indécis').length;
+    const abs = state.rows.filter(r=>r.statut==='Absent').length;
+    const nc  = state.rows.filter(r=>!r.statut || r.statut==='Non contacté').length;
     $('stats').textContent = ` | Fav: ${fav} Déf: ${def} Indécis: ${ind} Absent: ${abs} Non contacté: ${nc} | Total: ${state.rows.length}`;
   }
   function render(){
@@ -190,57 +212,41 @@
     updateStats();
   }
 
-  function populateFilters(){
-    const uniq = (arr)=> [...new Set(arr.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'fr'));
-    const secteurs = uniq(state.rows.map(r=>r.secteur));
-    const bureaux  = uniq(state.rows.map(r=>r.bureau));
-    $('fSecteur').innerHTML = '<option value="">Tous les secteurs</option>' + secteurs.map(s=>`<option>${EH(s)}</option>`).join('');
-    $('fBureau').innerHTML  = '<option value="">Tous les bureaux de vote</option>' + bureaux.map(s=>`<option>${EH(s)}</option>`).join('');
-  }
-
-  // ===== RÉCUPÉRATION TOTALE (pagination 1000) =====
-  async function fetchAllContacts(pageSize=1000){
-    let all = [], from = 0, to = pageSize - 1;
-    for(;;){
-      const { data, error } = await sb.from('contacts').select('*').range(from, to);
-      if (error){ return { data: all, error }; }
-      all = all.concat(data||[]);
-      if (!data || data.length < pageSize) break;
-      from += pageSize; to += pageSize;
-    }
-    return { data: all, error: null };
+  function fillBureauxDropdown(){
+    const sel=$('fBureau');
+    sel.innerHTML = '<option value="">Tous les bureaux de vote</option>' +
+      state.bureaux.map(v=>`<option>${EH(v)}</option>`).join('');
   }
 
   async function loadContacts(){
-    const { data, error } = await fetchAllContacts(1000);
-    if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
-
-    state.rows = (data||[]).map(c=>{
-      const m = nmap(c);
-      const statutBrut = c.status ?? c.statut ?? c.status_enum ?? c.visit_status ?? '';
-      const statutUI = fromEnum[String(statutBrut)] || (String(statutBrut).toLowerCase()==='neutre' ? 'Indécis' : (statutBrut || 'Non contacté'));
-      return {
-        id: c.id,
-        nom: buildNomMap(m),
-        adresse: buildAdresseMap(m),
-        secteur: buildSecteurMap(m),
-        bureau: buildBureauMap(m),
-        telephone: pickN(m, ['phone','telephone','telephone_1']),
-        email: pickN(m, ['email','courriel']),
-        statut: statutUI,
-        remarque: c.remark || c.remarque || ''
-      };
+    const all = await fetchAllContacts(); // 15k
+    // map
+    state.rows = all.map(c=>{
+      const nom = buildNom(c);
+      const adresse = buildAdresse(c);
+      const secteur = pick(c, ['sector','secteur']);
+      const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau']);
+      const telephone = pick(c, ['phone','téléphone','telephone']);
+      const email = pick(c,['email','courriel']);
+      // Si tu stockes un dernier statut côté contacts (enum DB sans accent) :
+      const label = DB_TO_LABEL[c.status] || 'Non contacté';
+      return { id:c.id, nom, adresse, secteur, bureau, telephone, email, statut:label, remarque:'' };
     });
 
-    state.indexById={}; state.rows.forEach(r => state.indexById[r.id]=r);
+    // index
+    state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
+
+    // Bureaux uniques triés
+    state.bureaux = Array.from(new Set(state.rows.map(r=>r.bureau).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'fr'));
+    fillBureauxDropdown();
+
     log('[contacts loaded]', state.rows.length);
-    populateFilters();
     render();
   }
 
-  // ===== AUTH / BOOT =====
   async function boot(){
     const { data:{ session } } = await sb.auth.getSession();
+    log('[boot session] ...', session);
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -252,65 +258,57 @@
     }
   }
 
-  // ===== EVENTS =====
+  // ---- events
   $('btnSignIn').onclick = async ()=>{
     $('authError').textContent='';
     const email=$('email').value.trim().toLowerCase();
     const password=$('password').value.trim();
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; return; }
+    if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
     await boot();
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
-  sb.auth.onAuthStateChange(()=> boot());
 
-  // Clic statut
+  // statut boutons -> insert visits + (optionnel) MAJ contacts.status
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
-    const id=b.dataset.id, label=b.dataset.val;                 // "Indécis"
-    const enumValue = toEnum[label] || label;                   // "neutre"
-    const { data: u } = await sb.auth.getUser();
-    const updated_by = u?.user?.id;
+    const id=b.dataset.id, uiLabel=b.dataset.val;          // "Indécis" etc.
+    const dbValue = STATUS_TO_DB[uiLabel];                 // "indecis" etc.
+    if (!dbValue){ alert('Statut inconnu'); return; }
 
-    // 1) insert visits (enum)
-    const ins = await sb.from('visits').insert([{ contact_id:id, status: enumValue, remark:'', updated_by }]);
-    if (ins.error){ alert(ins.error.message); return; }
+    const { data:usr } = await sb.auth.getUser();
+    const updated_by = usr?.user?.id;
 
-    // 2) update contacts.status (enum) sinon fallback texte
-    let up = await sb.from('contacts').update({ status: enumValue }).eq('id', id);
-    if (up.error){
-      up = await sb.from('contacts').update({ status: label }).eq('id', id);
-      // si encore erreur on laisse mais l'info est bien dans visits
-    }
+    // 1) Historique
+    const { error: e1 } = await sb.from('visits').insert([{ contact_id:id, status:dbValue, remark:'', updated_by }]);
+    if (e1){ alert(e1.message); log('[visits insert ERROR]', e1); return; }
+
+    // 2) (recommandé) si tu as une colonne status sur contacts pour l’état courant
+    try{
+      await sb.from('contacts').update({ status: dbValue }).eq('id', id);
+    }catch{ /* ignore si la colonne n’existe pas */ }
 
     // 3) UI
-    const r=state.indexById[id]; if(r){ r.statut = label; render(); }
+    const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = DB_TO_LABEL[dbValue]; render(); }
   });
 
-  // Éditions champs simples
+  // édition téléphone/email/remarque (MAJ contacts si colonnes présentes)
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
-    const patch={};
-    if(field==='telephone') patch.phone=val;
-    if(field==='email') patch.email=val;
-    if(field==='remarque') patch.remark=val;
+    const patch={}; if(field==='telephone') patch.phone=val; if(field==='email') patch.email=val; if(field==='remarque') patch.remark=val;
     if (Object.keys(patch).length){
-      const { error } = await sb.from('contacts').update(patch).eq('id', id);
-      if (error){ alert(error.message); }
-      else { const r=state.indexById[id]; if(r){ r[field]=val; } }
+      try{ await sb.from('contacts').update(patch).eq('id', id); }catch{}
     }
   });
 
-  // Filtres & reload
-  $('q').oninput     = e=>{ state.filters.q=e.target.value; render(); };
-  $('fStatus').onchange  = e=>{ state.filters.status=e.target.value; render(); };
-  $('fSecteur').onchange = e=>{ state.filters.secteur=e.target.value; render(); };
-  $('fBureau').onchange  = e=>{ state.filters.bureau=e.target.value; render(); };
+  $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
+  $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
+  $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
 
-  // CSV
+  // Exports
   const toCSV = rows=>{
     const cols=['Nom','Adresse','Secteur','Bureau de vote','Téléphone','Email','Statut','Remarque'];
     const esc=v=>`"${String(v??'').replace(/"/g,'""')}"`;
@@ -324,7 +322,8 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
-  // GO
+  // Go
+  sb.auth.onAuthStateChange(()=>boot());
   boot();
 })();
 </script>
