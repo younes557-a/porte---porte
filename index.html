@@ -37,16 +37,15 @@
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
 
-    // Libellés UI -> valeurs ENUM DB (sans accents/minuscule)
+    // Libellés UI -> valeur texte stockée en base (dans contacts.status)
     const STATUS_TO_DB = {
       'Favorable':'favorable',
       'Défavorable':'defavorable',
-      'Indécis':'indecis',       // bouton Indécis
-      'Neutre':'indecis',        // et “Neutre” alimente Indécis (comme demandé)
+      'Indécis':'indecis',
       'Absent':'absent',
       'Non contacté':'non_contacte'
     };
-    // Valeurs DB -> libellé UI
+    // Valeur DB -> libellé affiché
     const DB_TO_LABEL = {
       'favorable':'Favorable',
       'defavorable':'Défavorable',
@@ -125,11 +124,11 @@
 (function(){
   const $  = id => document.getElementById(id);
   const log = (...a)=>{ const s=a.map(x=> typeof x==='string'?x:JSON.stringify(x,null,2)).join(' '); console.log(...a); const el=$('log'); if(el) el.textContent += s+'\n'; };
-
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
+
   const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''}, bureaux:[] };
 
-  // helpers colonnes variables
+  // Helpers colonnes variables
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
   function buildAdresse(obj){
     const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
@@ -140,12 +139,11 @@
   }
   function buildNom(obj){
     const first = pick(obj, ['prénoms','prénom','prenom','first_name']);
-    const lastUsage = pick(obj, ['nom d’usage',"nom d'usage",'nom_usage','nom_usage']);
+    const lastUsage = pick(obj, ['nom d’usage',"nom d'usage",'nom_usage']);
     const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
     const last = lastUsage || lastBirth || pick(obj,['nom','last_name']);
     return [first,last].filter(Boolean).join(' ').trim();
   }
-
   function pill(label){
     if(label==='Favorable')return'<span class="pill fav">Favorable</span>';
     if(label==='Défavorable')return'<span class="pill def">Défavorable</span>';
@@ -155,22 +153,6 @@
   }
   function rowCls(label){ return label==='Favorable'?'row-fav':label==='Défavorable'?'row-def':(label==='Indécis'||label==='Non contacté')?'row-ind':''; }
 
-  // --------- CHARGEMENT 15k (pagination 1000 par 1000)
-  async function fetchAllContacts(){
-    const pageSize = 1000;
-    let from = 0, chunk = [], all=[];
-    do{
-      const to = from + pageSize - 1;
-      const { data, error } = await sb.from('contacts').select('*').range(from,to);
-      if (error){ throw error; }
-      chunk = data || [];
-      all = all.concat(chunk);
-      from += pageSize;
-    } while (chunk.length === pageSize);
-    return all;
-  }
-
-  // --------- REMPLISSAGE
   function filtered(){
     const q=(state.filters.q||'').toLowerCase();
     return state.rows.filter(r=>{
@@ -218,35 +200,42 @@
       state.bureaux.map(v=>`<option>${EH(v)}</option>`).join('');
   }
 
+  // ---- 15k contacts par pagination .range
+  async function fetchAllContacts(){
+    const pageSize = 1000;
+    let from = 0, chunk = [], all=[];
+    do{
+      const to = from + pageSize - 1;
+      const { data, error } = await sb.from('contacts').select('*').range(from,to);
+      if (error){ throw error; }
+      chunk = data || [];
+      all = all.concat(chunk);
+      from += pageSize;
+    } while (chunk.length === pageSize);
+    return all;
+  }
+
   async function loadContacts(){
-    const all = await fetchAllContacts(); // 15k
-    // map
+    const all = await fetchAllContacts();
     state.rows = all.map(c=>{
       const nom = buildNom(c);
       const adresse = buildAdresse(c);
       const secteur = pick(c, ['sector','secteur']);
-      const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau']);
+      const bureau  = pick(c, ['libellé du bureau de vote','libellé_du_bureau_de_vote','bureau_de_vote','code du bureau de vote','code_bureau','libellé du bureau de vote']);
       const telephone = pick(c, ['phone','téléphone','telephone']);
       const email = pick(c,['email','courriel']);
-      // Si tu stockes un dernier statut côté contacts (enum DB sans accent) :
       const label = DB_TO_LABEL[c.status] || 'Non contacté';
       return { id:c.id, nom, adresse, secteur, bureau, telephone, email, statut:label, remarque:'' };
     });
-
-    // index
     state.indexById={}; state.rows.forEach((r,i)=> state.indexById[r.id]=i);
-
-    // Bureaux uniques triés
     state.bureaux = Array.from(new Set(state.rows.map(r=>r.bureau).filter(Boolean))).sort((a,b)=>String(a).localeCompare(String(b),'fr'));
     fillBureauxDropdown();
-
     log('[contacts loaded]', state.rows.length);
     render();
   }
 
   async function boot(){
     const { data:{ session } } = await sb.auth.getSession();
-    log('[boot session] ...', session);
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -265,35 +254,25 @@
     const password=$('password').value.trim();
     if(!email || !password){ $('authError').textContent='Saisis email et mot de passe.'; return; }
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error){ $('authError').textContent=error.message; log('[login ERROR]', error); return; }
+    if (error){ $('authError').textContent=error.message; return; }
     await boot();
   };
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
 
-  // statut boutons -> insert visits + (optionnel) MAJ contacts.status
+  // 🔧 BOUTONS STATUT : MAJ contacts.status (texte). PAS de table visits.
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
-    const id=b.dataset.id, uiLabel=b.dataset.val;          // "Indécis" etc.
-    const dbValue = STATUS_TO_DB[uiLabel];                 // "indecis" etc.
+    const id=b.dataset.id, uiLabel=b.dataset.val;
+    const dbValue = STATUS_TO_DB[uiLabel];
     if (!dbValue){ alert('Statut inconnu'); return; }
 
-    const { data:usr } = await sb.auth.getUser();
-    const updated_by = usr?.user?.id;
+    const { error } = await sb.from('contacts').update({ status: dbValue }).eq('id', id);
+    if (error){ alert(error.message); log('[update status ERROR]', error); return; }
 
-    // 1) Historique
-    const { error: e1 } = await sb.from('visits').insert([{ contact_id:id, status:dbValue, remark:'', updated_by }]);
-    if (e1){ alert(e1.message); log('[visits insert ERROR]', e1); return; }
-
-    // 2) (recommandé) si tu as une colonne status sur contacts pour l’état courant
-    try{
-      await sb.from('contacts').update({ status: dbValue }).eq('id', id);
-    }catch{ /* ignore si la colonne n’existe pas */ }
-
-    // 3) UI
     const i=state.indexById[id]; if(i!=null){ state.rows[i].statut = DB_TO_LABEL[dbValue]; render(); }
   });
 
-  // édition téléphone/email/remarque (MAJ contacts si colonnes présentes)
+  // édition champs
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
@@ -303,7 +282,7 @@
     }
   });
 
-  $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
+  $('q').oninput   = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
   $('btnReload').onclick = loadContacts;
@@ -322,10 +301,10 @@
   $('btnCSVFav').onclick     = ()=> downloadCSV('favorables', state.rows.filter(r=>r.statut==='Favorable'));
   $('btnCSVIndecis').onclick = ()=> downloadCSV('indecis', state.rows.filter(r=>r.statut==='Indécis'));
 
-  // Go
   sb.auth.onAuthStateChange(()=>boot());
   boot();
 })();
 </script>
 </body>
 </html>
+
