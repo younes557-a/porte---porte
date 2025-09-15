@@ -32,7 +32,6 @@
   <script>
     const SUPABASE_URL  = 'https://ybzwaemympmesdttyvqi.supabase.co';
     const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc';
-
     const { createClient } = window.supabase;
     window.sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true } });
   </script>
@@ -102,6 +101,29 @@
   const EH = s => String(s||'').replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));
   const state = { rows:[], indexById:{}, filters:{q:'',status:'',bureau:''} };
 
+  // === Mapping statuts UI <-> ENUM base ===
+  const toEnum = {
+    'Favorable':'favorable',
+    'Défavorable':'defavorable',
+    'Indécis':'neutre',
+    'Absent':'absent',
+    'Non contacté':'non_contacte'
+  };
+  const fromEnum = {
+    'favorable':'Favorable',
+    'defavorable':'Défavorable',
+    'neutre':'Indécis',
+    'absent':'Absent',
+    'non_contacte':'Non contacté',
+    // tolérance si déjà texte en clair
+    'Favorable':'Favorable',
+    'Défavorable':'Défavorable',
+    'Indécis':'Indécis',
+    'Neutre':'Indécis',
+    'Absent':'Absent',
+    'Non contacté':'Non contacté'
+  };
+
   // --- rendu statuts / couleurs
   function pill(st){
     if(st==='Favorable')return'<span class="pill fav">Favorable</span>';
@@ -112,32 +134,34 @@
   }
   function rowCls(st){ return st==='Favorable'?'row-fav':st==='Défavorable'?'row-def':(st==='Indécis'||st==='Non contacté')?'row-ind':''; }
 
-  // --- helpers mapping
+  // --- helpers mapping colonnes
   function pick(obj, keys){ for(const k of keys){ if(k in obj && obj[k]!=null && obj[k]!== '') return obj[k]; } return ''; }
+
   function buildAdresse(obj){
-    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero']);
-    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie']);
-    const cp  = pick(obj, ['code postal','code_postal','cp']);
-    const com = pick(obj, ['commune','ville']);
-    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse']);
+    const num = pick(obj, ['numéro de voie','numero de voie','numero_de_voie','numéro_dans_la_voie','numero_dans_la_voie','numero','NUMERO']);
+    const lib = pick(obj, ['libellé de voie','libelle de la voie','libelle_de_voie','libellé_de_voie','rue','voie','RUE']);
+    const cp  = pick(obj, ['code postal','code_postal','cp','CP']);
+    const com = pick(obj, ['commune','ville','VILLE']);
+    return [num,lib,cp,com].filter(Boolean).join(' ') || pick(obj,['address','adresse','ADRESSE']);
   }
+
   function buildNom(obj){
-    const first = pick(obj, ['prénom','prenom','prénoms','prenoms','first_name','first']);
-    const lastUsage = pick(obj, ['nom d’usage','nom d\'usage','nom_usage','nom usage']);
-    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance']);
-    const lastDirect = pick(obj, ['nom','last_name','last']);
-    const last = lastUsage || lastBirth || lastDirect;
-    return [first,last].filter(Boolean).join(' ') || pick(obj,['name','display_name']);
+    const first = pick(obj, ['prénom','prenom','prénoms','prenoms','first_name','first','PRENOM','PRENOMS']);
+    const lastUsage = pick(obj, ['nom d’usage','nom d\'usage','nom_usage','nom usage','Nom d’usage','Nom d\'usage','NOM_USAGE','NOM USAGE','NOM D’USAGE','NOM D\'USAGE']);
+    const lastBirth = pick(obj, ['nom de naissance','nom_naissance','nom_de_naissance','Nom de naissance','NOM NAISSANCE','NOM_DE_NAISSANCE']);
+    const lastPlain = pick(obj, ['nom','Nom','NOM','last_name','last']);
+    const last = lastUsage || lastBirth || lastPlain;
+    return [first,last].filter(Boolean).join(' ') || pick(obj,['name','display_name','NOM COMPLET','Nom complet']);
   }
+
   function buildBureau(obj){
     return pick(obj, [
-      'libellé du bureau de vote','libelle du bureau de vote',
-      'bureau de vote','bureau_vote','bureau','code du bureau de vote'
+      'libellé du bureau de vote','libelle du bureau de vote','Libellé du bureau de vote',
+      'bureau de vote','Bureau de vote','bureau_vote','bureau','BUREAU',
+      'code du bureau de vote','Code du bureau de vote'
     ]);
   }
-  function buildSecteur(obj){
-    return pick(obj,['secteur','sector']);
-  }
+  function buildSecteur(obj){ return pick(obj,['secteur','Secteur','sector','SECTEUR']); }
 
   // --- filtrage & rendu
   function filtered(){
@@ -190,17 +214,21 @@
   async function loadContacts(){
     const { data, error } = await sb.from('contacts').select('*').limit(20000);
     if (error){ log('[loadContacts ERROR]', error); alert(error.message); return; }
-    state.rows = (data||[]).map(c=>({
-      id: c.id,
-      nom: buildNom(c),
-      adresse: buildAdresse(c),
-      secteur: buildSecteur(c),
-      bureau: buildBureau(c),
-      telephone: pick(c, ['phone','téléphone','telephone']),
-      email: pick(c, ['email','courriel']),
-      statut: c.status || c.statut || 'Non contacté',
-      remarque: c.remark || c.remarque || ''
-    }));
+    state.rows = (data||[]).map(c=>{
+      const statutBrut = c.status ?? c.statut ?? c.status_enum ?? c.visit_status ?? '';
+      const statutUI = fromEnum[String(statutBrut)] || 'Non contacté';
+      return {
+        id: c.id,
+        nom: buildNom(c),
+        adresse: buildAdresse(c),
+        secteur: buildSecteur(c),
+        bureau: buildBureau(c),
+        telephone: pick(c, ['phone','téléphone','telephone','PHONE']),
+        email: pick(c, ['email','courriel','EMAIL']),
+        statut: statutUI,
+        remarque: c.remark || c.remarque || ''
+      };
+    });
     state.indexById={}; state.rows.forEach((r)=> state.indexById[r.id]=r);
     log('[contacts loaded]', state.rows.length);
     populateBureaux();
@@ -210,7 +238,7 @@
   // --- auth / boot
   async function boot(){
     const { data:{ session } } = await sb.auth.getSession();
-    log('[boot session]', session, session?.user?.email || null);
+    log('[boot session]', session?.user?.email || null);
     if (session?.user){
       $('who').textContent = session.user.email || session.user.id;
       $('authCard').classList.add('hidden');
@@ -235,17 +263,35 @@
   $('btnSignOut').onclick = async ()=>{ await sb.auth.signOut(); await boot(); };
   sb.auth.onAuthStateChange((evt)=>{ log('[auth change]', evt); boot(); });
 
+  // Clic statut -> insert visits (enum) + update contacts (enum si possible, sinon texte)
   document.addEventListener('click', async (e)=>{
     const b = e.target.closest('button[data-act="set"]'); if(!b) return;
-    const id=b.dataset.id, val=b.dataset.val;
+    const id=b.dataset.id, label=b.dataset.val;                 // "Indécis"
+    const enumValue = toEnum[label] || label;                   // "neutre"
     const { data: u } = await sb.auth.getUser();
     const updated_by = u?.user?.id;
-    // on loggue le changement (table visits) ET on peut stocker le statut courant dans contacts.status
-    const { error: e1 } = await sb.from('visits').insert([{ contact_id:id, status:val, remark:'', updated_by }]);
-    const { error: e2 } = await sb.from('contacts').update({ status: val }).eq('id', id);
-    if (e1 || e2){ alert((e1||e2).message); log('[set status ERROR]', e1||e2); return; }
-    const r=state.indexById[id]; if(r){ r.statut = val; render(); }
+
+    // 1) Write in visits with enum
+    const ins = await sb.from('visits').insert([{ contact_id:id, status: enumValue, remark:'', updated_by }]);
+    if (ins.error){
+      alert(ins.error.message);
+      log('[visits insert ERROR]', ins.error);
+      return;
+    }
+
+    // 2) Try to update contacts.status as enum; if it fails, fallback to label text
+    let up = await sb.from('contacts').update({ status: enumValue }).eq('id', id);
+    if (up.error){
+      // fallback text
+      up = await sb.from('contacts').update({ status: label }).eq('id', id);
+      if (up.error){ alert(up.error.message); log('[contacts update ERROR]', up.error); return; }
+    }
+
+    // 3) reflect in UI
+    const r=state.indexById[id]; if(r){ r.statut = label; render(); }
   });
+
+  // Edit téléphone/email/remark -> update contacts (champ texte)
   document.addEventListener('input', async (e)=>{
     const el=e.target.closest('input[data-id],textarea[data-id]'); if(!el) return;
     const id=el.dataset.id, field=el.dataset.field, val=el.value;
@@ -260,6 +306,7 @@
     }
   });
 
+  // Filtres + reload
   $('q').oninput = e=>{ state.filters.q=e.target.value; render(); };
   $('fStatus').onchange = e=>{ state.filters.status=e.target.value; render(); };
   $('fBureau').onchange = e=>{ state.filters.bureau=e.target.value; render(); };
