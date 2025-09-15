@@ -3,153 +3,56 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Porte-à-porte — Supabase</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#fff; }
-    .wrap { max-width: 920px; margin: 40px auto; padding: 0 16px; }
-    h1 { font-size: 28px; margin-bottom: 16px; }
-    .card { border:2px solid #111; border-radius:10px; padding:18px; }
-    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-    .field { display:flex; flex-direction:column; gap:6px; min-width:260px; flex:1; }
-    label { font-weight:600; font-size:14px; }
-    input[type="email"], input[type="password"] {
-      border:1px solid #bdbdbd; border-radius:8px; padding:10px 12px; font-size:15px; width:100%;
-    }
-    button { border:0; border-radius:999px; padding:10px 16px; font-weight:700; cursor:pointer; }
-    .btn-primary { background:#2563eb; color:#fff; }
-    .btn-secondary { background:#e5e7eb; color:#111; }
-    .status { margin-top:10px; font-size:14px; min-height:20px; }
-    .status.error { color:#b91c1c; }
-    .status.ok { color:#065f46; }
-    .muted { color:#6b7280; font-size:13px; }
-  </style>
+  <title>Porte-à-porte — Connexion</title>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Porte-à-porte — Supabase</h1>
-    <p class="muted">Connexion requise. Accès complet à la base.</p>
+  <h1>Porte-à-porte — Connexion</h1>
+  <form id="login-form" autocomplete="on">
+    <input id="email" type="email" placeholder="Email" autocomplete="email" required />
+    <input id="password" type="password" placeholder="Mot de passe" autocomplete="current-password" required />
+    <button type="submit">Se connecter</button>
+  </form>
+  <button id="forgot-btn">Mot de passe oublié</button>
+  <div id="status"></div>
 
-    <div class="card">
-      <form id="login-form" class="row" autocomplete="on">
-        <div class="field">
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required />
-        </div>
-        <div class="field">
-          <label for="password">Mot de passe</label>
-          <input id="password" name="current-password" type="password" autocomplete="current-password" required />
-        </div>
-        <div class="row">
-          <button id="login-btn" class="btn-primary" type="submit">Se connecter</button>
-          <button id="forgot-btn" class="btn-secondary" type="button">Mot de passe oublié</button>
-        </div>
-        <div id="status" class="status" aria-live="polite"></div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Supabase JS v2 -->
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script>
-    // 1) REMPLACE ces 2 constantes par les valeurs de TON projet
-    const SUPABASE_URL = "https://XXXXXXXXXXXX.supabase.co";          // ← Project URL
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // ← anon key (PAS la service_role)
+    const SUPABASE_URL = "https://ybzwaemympmesdttyvqi.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliendhZW15bXBtZXNkdHR5dnFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4NDI3MjcsImV4cCI6MjA3MzQxODcyN30.MfFsFmpxYGWp-PIR4TXYKjXqOZY0On1r3Y0QUvqNkTc";
 
-    // 2) Calcul automatique de l'URL de redirection pour le reset (doit être autorisée dans Supabase)
-    const basePath = (() => {
-      const url = new URL(location.href);
-      // Ex: https://younes557-a.github.io/porte---porte/index.html  -> garde /porte---porte/
-      const parts = url.pathname.split("/");
-      if (parts[parts.length - 1].match(/^index\.html?$/i)) parts.pop();
-      if (parts[parts.length - 1] !== "") parts.push("");
-      return url.origin + parts.join("/");
-    })();
-    const RESET_REDIRECT_URL = basePath + "reset_password.html";
+    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 3) Client Supabase
-    const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    // Helpers UI
-    const form   = document.getElementById("login-form");
-    const btn    = document.getElementById("login-btn");
-    const forgot = document.getElementById("forgot-btn");
     const status = document.getElementById("status");
 
-    function setStatus(msg, kind = "") {
-      status.className = "status " + kind;
-      status.textContent = msg || "";
-    }
-    function setLoading(isLoading, msg = "") {
-      btn.disabled = isLoading;
-      forgot.disabled = isLoading;
-      setStatus(msg);
-    }
-
-    // 4) Si l'utilisateur a déjà une session, on peut rediriger directement
-    (async () => {
-      const { data: { session } } = await supa.auth.getSession();
-      if (session) {
-        setStatus("Déjà connecté ✅, redirection…", "ok");
-        location.href = "reset_password.html"; // change la cible si besoin
-      }
-    })();
-
-    // 5) Connexion email/password
-    form.addEventListener("submit", async (e) => {
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("email").value.trim();
       const password = document.getElementById("password").value;
+      status.textContent = "Connexion en cours…";
 
-      if (!email || !password) {
-        setStatus("Veuillez saisir l'email et le mot de passe.", "error");
-        return;
-      }
-
-      setLoading(true, "Connexion en cours…");
-
-      const { data, error } = await supa.auth.signInWithPassword({ email, password });
-
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        // Messages lisibles fréquents
-        if (/email not confirmed/i.test(error.message)) {
-          setStatus("Email non confirmé. Confirme l'email dans Supabase ou désactive la confirmation.", "error");
-        } else if (/invalid login credentials/i.test(error.message)) {
-          setStatus("Identifiants invalides. Vérifie l'email et le mot de passe.", "error");
-        } else {
-          setStatus("Erreur : " + error.message, "error");
-        }
-        console.error("[login error]", error);
-        setLoading(false);
-        return;
+        status.textContent = "Erreur : " + error.message;
+      } else {
+        status.textContent = "Connecté ✅";
+        window.location.href = "session.html";
       }
-
-      setStatus("Connecté ✅, redirection…", "ok");
-      location.href = "reset_password.html"; // change la cible si besoin
     });
 
-    // 6) Mot de passe oublié
-    forgot.addEventListener("click", async () => {
+    document.getElementById("forgot-btn").addEventListener("click", async () => {
       const email = document.getElementById("email").value.trim();
       if (!email) {
-        setStatus("Entre ton email dans le champ pour recevoir le lien de réinitialisation.", "error");
+        status.textContent = "Saisis ton email pour recevoir un lien de réinitialisation.";
         return;
       }
-      setLoading(true, "Envoi du lien de réinitialisation…");
-      const { data, error } = await supa.auth.resetPasswordForEmail(email, {
-        redirectTo: RESET_REDIRECT_URL
+      const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: "https://younes557-a.github.io/porte---porte/reset_password.html"
       });
       if (error) {
-        if (/not allowed/i.test(error.message) || /redirect/i.test(error.message)) {
-          setStatus("URL de redirection non autorisée. Ajoute : " + RESET_REDIRECT_URL + " dans Supabase → Authentication → URL Configuration.", "error");
-        } else {
-          setStatus("Erreur : " + error.message, "error");
-        }
-        console.error("[reset error]", error);
-        setLoading(false);
-        return;
+        status.textContent = "Erreur : " + error.message;
+      } else {
+        status.textContent = "Email envoyé ✅ vérifie ta boîte mail.";
       }
-      setStatus("Email envoyé ✅. Vérifie ta boîte mail.", "ok");
-      setLoading(false);
     });
   </script>
 </body>
